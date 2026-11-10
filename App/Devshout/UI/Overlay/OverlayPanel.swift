@@ -91,11 +91,11 @@ final class OverlayPanel: NSPanel {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
             guard let self, !Task.isCancelled else { return }
-            NSAnimationContext.runAnimationGroup { context in
+            await NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
                 self.animator().alphaValue = 0
             }
-            try? await Task.sleep(nanoseconds: 220_000_000)
+            try? await Task.sleep(nanoseconds: 20_000_000)
             guard !Task.isCancelled else { return }
             self.orderOut(nil)
             self.alphaValue = 1

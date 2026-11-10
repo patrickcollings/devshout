@@ -277,6 +277,8 @@ extension PillPhase {
             return "Pasted raw: \(reason)"
         case .fallback(_, .copiedOnly):
             return "Copied raw: press ⌘V"
+        case .done(.failed(let reason)), .fallback(_, .failed(let reason)):
+            return reason
         case .error(let message):
             return message
         }
@@ -296,7 +298,7 @@ extension PillPhase {
         case .recording, .transcribing, .cleaning: .neutral
         case .done(.pasted): .positive
         case .done(.copiedOnly), .fallback: .warning
-        case .error: .critical
+        case .done(.failed), .error: .critical
         }
     }
 
@@ -307,6 +309,7 @@ extension PillPhase {
         case .cleaning: "sparkles"
         case .done(.pasted): "checkmark.circle.fill"
         case .done(.copiedOnly): "doc.on.clipboard"
+        case .done(.failed): "xmark.circle.fill"
         case .fallback: "exclamationmark.circle.fill"
         case .error: "xmark.octagon.fill"
         }
