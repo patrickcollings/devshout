@@ -1,0 +1,73 @@
+{
+  "description": "A word heard either side of the midpoint, with different casing (FluidAudio issue 706), is kept once.",
+  "expected": "Let's talk before the meeting starts at ten.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Let's talk before the meeting",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Let's",
+          "start": 12.6,
+          "end": 12.8
+        },
+        {
+          "text": "talk",
+          "start": 12.85,
+          "end": 13.0
+        },
+        {
+          "text": "before",
+          "start": 13.05,
+          "end": 13.3
+        },
+        {
+          "text": "the",
+          "start": 13.35,
+          "end": 13.45
+        },
+        {
+          "text": "meeting",
+          "start": 13.6,
+          "end": 13.9
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "Meeting starts at ten.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Meeting",
+          "start": 13.75,
+          "end": 13.95
+        },
+        {
+          "text": "starts",
+          "start": 14.0,
+          "end": 14.3
+        },
+        {
+          "text": "at",
+          "start": 14.35,
+          "end": 14.45
+        },
+        {
+          "text": "ten.",
+          "start": 14.5,
+          "end": 14.8
+        }
+      ]
+    }
+  ]
+}

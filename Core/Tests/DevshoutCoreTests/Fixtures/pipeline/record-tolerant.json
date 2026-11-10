@@ -1,0 +1,20 @@
+{
+  "id": "5A3C1F0E-2B7D-4C1A-9E8F-0123456789AB",
+  "createdAt": "2026-11-10T14:02:03Z",
+  "duration": 12.5,
+  "status": "somethingNew",
+  "mode": "structure",
+  "targetApp": { "bundleID": "com.apple.Terminal", "name": "Terminal" },
+  "engine": "parakeet-tdt-0.6b-v3",
+  "rawText": "check the core sea flag",
+  "fixedText": "check the CORSIA flag",
+  "fixesApplied": true,
+  "versions": [
+    { "mode": "structure", "model": "sonnet", "text": "Check the CORSIA flag.", "elapsed": 3.2,
+      "warnings": [], "createdAt": "2026-11-10T14:02:09.250Z" },
+    { "mode": "tidy", "model": "haiku" }
+  ],
+  "delivered": { "method": "pasted", "appName": "Terminal" },
+  "timings": { "transcription": 0.4, "cleaning": 3.2, "total": 3.7 },
+  "aFieldFromALaterVersion": true
+}

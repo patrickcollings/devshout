@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "engine": "some-engine-from-the-future",
+  "defaultMode": "structure",
+  "modes": {
+    "tidy": { "timeout": 25 },
+    "structure": { "claudeModel": "opus", "customInstructions": "Use headings." },
+    "raw": "not an object",
+    "commitMessage": { "claudeModel": "haiku", "timeout": 10 }
+  },
+  "perAppModes": {
+    "com.apple.Terminal": "structure",
+    "com.tinyspeck.slackmacgap": "tidy",
+    "com.example.unknown": "shout"
+  },
+  "hotkeyBehaviour": "holdOnly",
+  "pasteMethod": 42,
+  "soundsEnabled": false,
+  "audioRetentionDays": null,
+  "applyGlossaryFixes": "yes please",
+  "someKeyFromALaterVersion": { "nested": [1, 2, 3] }
+}

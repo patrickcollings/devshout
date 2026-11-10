@@ -1,0 +1,24 @@
+{
+  "description": "The fallback ignores case and punctuation; the next chunk's version is kept.",
+  "expected": "Send the report to sam then publish it.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Send the report to Sam, then",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "sam then publish it.",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    }
+  ]
+}

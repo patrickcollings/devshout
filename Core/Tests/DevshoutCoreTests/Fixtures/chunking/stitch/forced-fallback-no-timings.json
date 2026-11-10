@@ -1,0 +1,24 @@
+{
+  "description": "Forced cut without timings: the longest repeated run of words is removed from the end of the previous chunk.",
+  "expected": "So we need to update the procurement page by Friday.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "So we need to update the procurement",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "the procurement page by Friday.",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    }
+  ]
+}

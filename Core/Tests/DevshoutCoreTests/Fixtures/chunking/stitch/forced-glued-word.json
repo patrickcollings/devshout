@@ -1,0 +1,24 @@
+{
+  "description": "A word cut in two at a forced seam is kept once.",
+  "expected": "The build really works fine now.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "The build really works",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "rks fine now.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}

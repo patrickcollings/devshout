@@ -1,0 +1,88 @@
+{
+  "description": "A word really said twice either side of the midpoint (13.71 s): the second copy starts after the first ends, so both stay.",
+  "expected": "It was very very good, no no, not that one.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "It was very",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "It",
+          "start": 12.8,
+          "end": 12.9
+        },
+        {
+          "text": "was",
+          "start": 13.0,
+          "end": 13.2
+        },
+        {
+          "text": "very",
+          "start": 13.3,
+          "end": 13.6
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "was very very good, no no, not that one.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "was",
+          "start": 13.25,
+          "end": 13.4
+        },
+        {
+          "text": "very",
+          "start": 13.42,
+          "end": 13.6
+        },
+        {
+          "text": "very",
+          "start": 13.75,
+          "end": 14.1
+        },
+        {
+          "text": "good,",
+          "start": 14.2,
+          "end": 14.5
+        },
+        {
+          "text": "no",
+          "start": 14.7,
+          "end": 14.8
+        },
+        {
+          "text": "no,",
+          "start": 14.9,
+          "end": 15.0
+        },
+        {
+          "text": "not",
+          "start": 15.2,
+          "end": 15.3
+        },
+        {
+          "text": "that",
+          "start": 15.35,
+          "end": 15.5
+        },
+        {
+          "text": "one.",
+          "start": 15.55,
+          "end": 15.8
+        }
+      ]
+    }
+  ]
+}
