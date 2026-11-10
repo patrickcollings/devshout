@@ -197,7 +197,8 @@ public enum SpikeBench {
                 if load.downloaded {
                     result.notes.append("\(engineRun.label): the model was downloaded during this run, so its load time includes the download.")
                 }
-                var loadReported = false
+                // The model load goes on the engine's first row, whatever its mode.
+                var pendingLoad: TimeInterval? = load.seconds
                 for item in runnable {
                     for run in 1...options.runs {
                         let runLabel = options.runs > 1 ? " (run \(run)/\(options.runs))" : ""
@@ -209,18 +210,17 @@ public enum SpikeBench {
                             result.notes.append("\(item.sample.id) · \(engineRun.label)\(runLabel): transcription failed (\(describe(error))).")
                             continue
                         }
-                        var timings = BenchTimings(modelLoad: loadReported ? nil : load.seconds,
+                        var timings = BenchTimings(modelLoad: pendingLoad,
                                                    transcribe: transcription.timings.transcribe,
                                                    tailLatency: transcription.timings.tailLatency)
-                        loadReported = true
                         if options.modes.contains(.raw) {
                             result.append(score(sample: item.sample, reference: item.reference, text: transcription.text,
                                                 engine: engineRun.label, mode: "raw", model: "", timings: timings,
                                                 corpus: corpus, glossaryTerms: glossaryTerms,
                                                 warnings: transcription.warnings))
+                            pendingLoad = nil
+                            timings.modelLoad = nil
                         }
-                        // The model load belongs to the first row only, whatever its mode.
-                        timings.modelLoad = nil
                         for mode in claudeModes {
                             let config = options.modeConfigs[mode] ?? ModeConfig.defaults[mode]
                                 ?? ModeConfig(id: mode, claudeModel: "haiku", timeout: 30)
@@ -238,6 +238,8 @@ public enum SpikeBench {
                                                     engine: engineRun.label, mode: mode.rawValue,
                                                     model: config.claudeModel, timings: claudeTimings, corpus: corpus,
                                                     glossaryTerms: glossaryTerms, warnings: cleaned.warnings))
+                                pendingLoad = nil
+                                timings.modelLoad = nil
                             } catch {
                                 let cleanError = error as? CleanError
                                 claudeTimings.claudeTotal = SpikeClock.now() - started
@@ -247,6 +249,8 @@ public enum SpikeBench {
                                                    model: config.claudeModel, timings: claudeTimings)
                                 result.rows.append(row)
                                 result.details.append(SpikeBenchDetail(row: row, text: "", warnings: ["Failed: \(why)"]))
+                                pendingLoad = nil
+                                timings.modelLoad = nil
                                 // No point asking again when there is no claude or no token.
                                 switch cleanError {
                                 case .claudeNotFound?, .notConnected?, .authFailed?: claudeUnavailable = cleanError

@@ -129,6 +129,25 @@ final class SpikeRecorder: @unchecked Sendable {
         #expect(!lines.contains { $0.contains("s02.wav") })
     }
 
+    @Test func modelLoadIsReportedWithoutRawRows() async throws {
+        let (dir, corpus) = try makeCorpus()
+        defer { dir.remove() }
+        let options = SpikeBenchOptions(engines: [SpikeBenchEngine(engine: .parakeetV3)], modes: [.tidy, .structure])
+        let result = await SpikeBench.run(corpus: corpus, glossaryTerms: corpus.glossaryTerms, options: options,
+                                          dependencies: dependencies(log: SpikeRecorder()))
+        let parakeet = result.rows.filter { $0.engine == "parakeet" }
+        #expect(parakeet.count == 4)
+        #expect(parakeet.first?.mode == "tidy")
+        #expect(parakeet.first?.timings.modelLoad == 1.5)
+        #expect(parakeet.filter { $0.timings.modelLoad != nil }.count == 1)
+
+        // A failed clean-up row still carries it.
+        let failing = await SpikeBench.run(corpus: corpus, glossaryTerms: corpus.glossaryTerms, options: options,
+                                           dependencies: dependencies(log: SpikeRecorder(), cleanFails: .notConnected))
+        #expect(failing.rows.first?.timings.modelLoad == 1.5)
+        #expect(failing.rows.filter { $0.timings.modelLoad != nil }.count == 1)
+    }
+
     @Test func stopsAskingClaudeWhenItCannotWork() async throws {
         let (dir, corpus) = try makeCorpus()
         defer { dir.remove() }
