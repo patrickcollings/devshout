@@ -5,14 +5,11 @@ import SwiftUI
 
 struct HistorySettingsTab: View {
     @ObservedObject var model: HistoryViewModel
-    @State private var selection: UUID?
     @State private var confirmingDelete = false
 
-    private var selected: Recording? {
-        model.recordings.first { $0.id == selection } ?? model.recordings.first
-    }
-
     var body: some View {
+        let visible = model.visibleRecordings
+        let selected = model.selectedRecording
         Group {
             if model.recordings.isEmpty {
                 VStack(spacing: 8) {
@@ -27,13 +24,29 @@ struct HistorySettingsTab: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(spacing: 0) {
-                    List(model.recordings, selection: $selection) { recording in
-                        HistoryRow(recording: recording).tag(recording.id)
+                    VStack(spacing: 0) {
+                        HistorySearchField(text: $model.searchText)
+                            .padding(8)
+                        Divider()
+                        if visible.isEmpty {
+                            Text(HistoryText.noMatches(for: model.searchText))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            List(visible, selection: $model.selection) { recording in
+                                HistoryRow(recording: recording).tag(recording.id)
+                            }
+                        }
                     }
                     .frame(width: 230)
                     Divider()
                     if let selected {
                         HistoryDetail(recording: selected, model: model, confirmingDelete: $confirmingDelete)
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
@@ -43,11 +56,47 @@ struct HistorySettingsTab: View {
         .confirmationDialog("Delete this dictation?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) {
                 if let selected { model.delete(selected.id) }
-                selection = nil
+                model.selection = nil
             }
         } message: {
             Text("This deletes its audio and its text. It can't be undone.")
         }
+    }
+}
+
+/// The search field above the list: a magnifying glass, the text, and a button to clear it.
+private struct HistorySearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search dictations", text: $text)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the search")
+                .accessibilityLabel("Clear the search")
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
@@ -144,53 +193,16 @@ private struct HistoryTextBlock: View {
     }
 }
 
-/// What the History tab says about a recording.
-enum HistoryText {
-    /// The text to show first and to copy: what was pasted, else the cleaned text, else the transcript.
-    static func bestText(for recording: Recording) -> String? {
-        for candidate in [recording.deliveredText, recording.latestVersion?.text, recording.transcript] {
-            if let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty { return text }
-        }
-        return nil
-    }
-
-    static func bestTitle(for recording: Recording) -> String {
-        guard recording.deliveredText != nil, let delivered = recording.delivered else { return "Transcript (not pasted)" }
-        switch delivered.method {
-        case .pasted: return delivered.appName.map { "Pasted into \($0)" } ?? "Pasted"
-        case .copiedOnly: return "Copied to the clipboard"
-        case .failed: return "Not pasted"
-        }
-    }
-
-    /// The transcript before clean-up, when it differs from the text shown first.
-    static func heardText(for recording: Recording) -> String? {
-        guard let heard = recording.transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !heard.isEmpty,
-              heard != bestText(for: recording) else { return nil }
-        return heard
-    }
-
-    static func snippet(for recording: Recording) -> String {
-        bestText(for: recording) ?? recording.errorMessage ?? "No text"
-    }
-
-    /// "00:07 · Whisper large-v3-turbo · took 3.2 s"
-    static func facts(for recording: Recording) -> String {
-        var parts = [UIFormat.timer(recording.duration)]
-        if let engine = recording.engine { parts.append(engine.displayName) }
-        if let total = recording.timings.total { parts.append("took \(UIFormat.seconds(total))") }
-        return parts.joined(separator: " · ")
-    }
+#Preview("History") {
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings))
 }
 
-#Preview("History") {
-    HistorySettingsTab(model: HistoryViewModel(recordings: [
-        Recording(id: UUID(), createdAt: Date(), duration: 7, mode: .tidy, engine: .parakeetV3,
-                  rawText: "um can you check the corsia flag", deliveredText: "Can you check the CORSIA flag?",
-                  delivered: DeliveryRecord(.pasted(appName: "Slack"))),
-        Recording(id: UUID(), createdAt: Date().addingTimeInterval(-3600), duration: 3, status: .failed,
-                  errorMessage: "No speech was detected."),
-    ]))
+#Preview("History: searching") {
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings, searchText: "corsia"))
+}
+
+#Preview("History: nothing matches") {
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings, searchText: "procurement"))
 }
 
 #Preview("History: empty") {

@@ -69,6 +69,41 @@ enum PreviewData {
       - heard: a b {n}, AB {n}
     """
 
+    /// History samples, newest first: a plain Tidy dictation, one re-run as Structure (three texts to show), one
+    /// that failed, and an old one whose audio retention has deleted.
+    static let recordings: [Recording] = {
+        let now = Date()
+        let rambling = "um so the corsia flag is wrong on the project page and also can you add a test for it and er check the n d c field too"
+        let tidied = "The CORSIA flag is wrong on the project page. Can you add a test for it, and check the NDC field too?"
+        return [
+            Recording(id: UUID(), createdAt: now, duration: 7, mode: .tidy, engine: .parakeetV3,
+                      rawText: "um can you check the corsia flag",
+                      versions: [CleanVersion(mode: .tidy, model: "haiku", text: "Can you check the CORSIA flag?",
+                                              elapsed: 1.4, createdAt: now)],
+                      deliveredText: "Can you check the CORSIA flag?",
+                      delivered: DeliveryRecord(.pasted(appName: "Slack")),
+                      timings: RecordingTimings(total: 2.1)),
+            Recording(id: UUID(), createdAt: now.addingTimeInterval(-1800), duration: 19, mode: .tidy,
+                      engine: .whisperLargeV3Turbo, rawText: rambling,
+                      versions: [
+                          CleanVersion(mode: .tidy, model: "haiku", text: tidied, elapsed: 1.8,
+                                       createdAt: now.addingTimeInterval(-1795)),
+                          CleanVersion(mode: .structure, model: "sonnet",
+                                       text: "Fix the project page:\n\n1. The CORSIA flag is wrong: correct it.\n2. Add a test for the flag.\n3. Check the NDC field as well.",
+                                       elapsed: 6.2, createdAt: now.addingTimeInterval(-600)),
+                      ],
+                      deliveredText: tidied, delivered: DeliveryRecord(.pasted(appName: "Linear")),
+                      timings: RecordingTimings(total: 3.4)),
+            Recording(id: UUID(), createdAt: now.addingTimeInterval(-3600), duration: 3, status: .failed,
+                      errorMessage: "No speech was detected."),
+            Recording(id: UUID(), createdAt: now.addingTimeInterval(-40 * 86_400), duration: 12, mode: .raw,
+                      engine: .parakeetV3, rawText: "remember to renew the procurement contract before friday",
+                      deliveredText: "remember to renew the procurement contract before friday",
+                      delivered: DeliveryRecord(.copiedOnly(reason: "No text field was focused")),
+                      audioDeletedAt: now.addingTimeInterval(-10 * 86_400)),
+        ]
+    }()
+
     /// A crude stand-in for the real parser: counts bullets per section.
     static func countTerms(_ text: String) -> GlossaryTermCounts {
         var counts = GlossaryTermCounts()

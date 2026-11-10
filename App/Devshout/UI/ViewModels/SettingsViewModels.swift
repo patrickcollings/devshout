@@ -353,12 +353,30 @@ final class HistoryViewModel: ObservableObject {
 
     /// Newest first.
     @Published var recordings: [Recording]
+    /// The search field's text. Blank shows everything.
+    @Published var searchText: String
+    /// The row picked in the list. Nil (nothing picked yet, or the picked one was filtered out or deleted) shows
+    /// the first visible recording.
+    @Published var selection: UUID?
     var actions: Actions
 
-    init(recordings: [Recording] = [], actions: Actions = Actions()) {
+    init(recordings: [Recording] = [], searchText: String = "", selection: UUID? = nil, actions: Actions = Actions()) {
         self.recordings = recordings
+        self.searchText = searchText
+        self.selection = selection
         self.actions = actions
     }
+
+    /// The recordings that match the search, newest first.
+    var visibleRecordings: [Recording] { recordings.matching(search: searchText) }
+
+    /// The recording the detail pane shows.
+    var selectedRecording: Recording? {
+        let visible = visibleRecordings
+        return visible.first { $0.id == selection } ?? visible.first
+    }
+
+    var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     func reload() { actions.reload() }
     func delete(_ id: UUID) { actions.delete(id) }

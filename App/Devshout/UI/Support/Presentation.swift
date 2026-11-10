@@ -341,3 +341,49 @@ extension GlossaryTermCounts {
          UIFormat.plural(mishearings, "mishearing")].joined(separator: " · ")
     }
 }
+
+// MARK: - History
+
+/// What the History tab says about a recording.
+enum HistoryText {
+    /// The text to show first and to copy: what was pasted, else the cleaned text, else the transcript.
+    static func bestText(for recording: Recording) -> String? {
+        for candidate in [recording.deliveredText, recording.latestVersion?.text, recording.transcript] {
+            if let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty { return text }
+        }
+        return nil
+    }
+
+    static func bestTitle(for recording: Recording) -> String {
+        guard recording.deliveredText != nil, let delivered = recording.delivered else { return "Transcript (not pasted)" }
+        switch delivered.method {
+        case .pasted: return delivered.appName.map { "Pasted into \($0)" } ?? "Pasted"
+        case .copiedOnly: return "Copied to the clipboard"
+        case .failed: return "Not pasted"
+        }
+    }
+
+    /// The transcript before clean-up, when it differs from the text shown first.
+    static func heardText(for recording: Recording) -> String? {
+        guard let heard = recording.transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !heard.isEmpty,
+              heard != bestText(for: recording) else { return nil }
+        return heard
+    }
+
+    static func snippet(for recording: Recording) -> String {
+        bestText(for: recording) ?? recording.errorMessage ?? "No text"
+    }
+
+    /// "00:07 · Whisper large-v3-turbo · took 3.2 s"
+    static func facts(for recording: Recording) -> String {
+        var parts = [UIFormat.timer(recording.duration)]
+        if let engine = recording.engine { parts.append(engine.displayName) }
+        if let total = recording.timings.total { parts.append("took \(UIFormat.seconds(total))") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Under the search field when the search finds nothing.
+    static func noMatches(for search: String) -> String {
+        "No dictations contain “\(search.trimmingCharacters(in: .whitespacesAndNewlines))”."
+    }
+}
