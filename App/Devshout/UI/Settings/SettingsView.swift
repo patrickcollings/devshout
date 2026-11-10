@@ -17,6 +17,10 @@ struct SettingsView: View {
             content
         }
         .frame(width: SettingsLayout.width)
+        // A recording playing in History has its Stop button there: leaving the tab stops it.
+        .onChange(of: tab) { _, shown in
+            if shown != .history { models.history.stopPlayback() }
+        }
     }
 
     @ViewBuilder
