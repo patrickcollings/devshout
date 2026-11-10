@@ -12,9 +12,31 @@ devshout is a native macOS menu bar dictation app for the Abatable team. Press a
 
 ## Status
 
-**Planning.** Nothing is built yet. Read [`docs/PLAN.md`](docs/PLAN.md) for the architecture, UX, phases, testing strategy, risks and open questions.
+**v0.1, for testing on Patrick's Mac.** Menu bar app, onboarding, hotkeys (tap to toggle, hold to talk, Esc to
+cancel), local transcription after you stop, Tidy and Structure through Claude with a raw fallback, paste, a
+recording pill and Settings. History is kept on disk; the History window comes in v0.2. The plan is in
+[`docs/PLAN.md`](docs/PLAN.md) and the test checklist in [`docs/MANUAL_TESTS.md`](docs/MANUAL_TESTS.md).
 
-## Requirements (planned)
+## First run
+
+**Get the app**, either way:
+
+- **From CI:** open the latest run of the *macOS build* workflow (Actions tab), download the `devshout-<sha>`
+  artefact, unzip it, then unzip `devshout-app.zip` inside and move `devshout.app` to /Applications. The first time
+  you open it macOS blocks it: go to **System Settings → Privacy & Security**, scroll to "devshout was blocked…" and
+  click **Open Anyway**. Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/devshout.app`
+- **Build it yourself:** `brew install xcodegen && xcodegen generate && open Devshout.xcodeproj`, pick the
+  **Devshout** scheme and Run.
+
+Onboarding then walks you through the microphone, Accessibility, the speech model download, Claude and the hotkeys.
+Press **⌥Space** to dictate.
+
+**Accessibility after a new build:** the app is ad-hoc signed, so macOS sees each new build as a different app and
+Accessibility (needed to paste) may stop working even though its switch is still on. Open **System Settings →
+Privacy & Security → Accessibility**, select devshout, remove it with **−**, then add it again with **+** (or switch
+it on when onboarding asks).
+
+## Requirements
 
 - macOS 14 Sonoma or later, Apple Silicon
 - [Claude Code](https://code.claude.com/docs/en/setup) and a Claude Pro, Max, Team or Enterprise plan for Tidy and Structure (Raw works without it)

@@ -6,8 +6,8 @@
 // - `.symbolEffect(.pulse, options: .repeating)` (macOS 14) on the recording dot and the cleaning sparkles.
 // - SwiftUI `.onHover` in a panel that never becomes key; `OverlayPanel` also reports hover through
 //   `RecordingPillViewModel.isHovering` from an AppKit tracking area, and the pill uses either.
-// - "Paste raw now" has no ⏎ shortcut here: the panel never becomes key, so a Return hotkey must be registered
-//   globally by wiring while the cleaning state is showing.
+// - "Paste raw now" has no ⏎ shortcut here: the panel never becomes key, so wiring registers Return globally
+//   while the cleaning state is showing (DictationController).
 
 import DevshoutCore
 import SwiftUI
@@ -81,7 +81,7 @@ struct RecordingPill: View {
         } else if model.phase.isRecording || isTranscribing {
             PillTimer(startedAt: model.startedAt, frozen: model.finalDuration)
         } else if model.showsPasteRawButton {
-            Button("Paste raw now") { model.pasteRawNow() }
+            Button("Paste raw now ⏎") { model.pasteRawNow() }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .help("Skip Claude and paste what was transcribed")

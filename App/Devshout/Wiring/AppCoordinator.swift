@@ -1,0 +1,469 @@
+// AppCoordinator owns everything: the files under ~/Library/Application Support/devshout, settings.json, history,
+// the glossary, the engines, Claude, permissions, hotkeys and the dictation pipeline, and the view models the
+// scenes show. It is built once (`shared`) and started by the app delegate.
+//
+// Rule of thumb here: nothing slow runs on the main actor. Engines, the VAD, the dictation session and Claude are
+// actors or run child processes; history and file-size work goes through detached tasks.
+
+import AppKit
+import Combine
+import DevshoutCore
+import DevshoutMac
+import Foundation
+import KeyboardShortcuts
+import SwiftUI
+
+@MainActor
+final class AppCoordinator {
+    static let shared = AppCoordinator()
+
+    let paths: AppPaths
+    let models: DevshoutViewModels
+
+    private let settingsStore: SettingsStore
+    private(set) var settings: AppSettings
+    /// The same settings, for closures that run off the main actor (paste method, sounds).
+    private let settingsBox: LockedBox<AppSettings>
+    private let defaults = UserDefaults.standard
+
+    let history: HistoryStore
+    let glossary: GlossaryController
+    let engines: EngineController
+    let claude: ClaudeController
+    let permissions: PermissionsController
+    let devices: InputDevicesController
+    let levelMeter: LevelMeterController
+    let dictation: DictationController
+    let recorder: MicRecorder
+    let vad: SileroVAD
+    let sounds: Sounds
+    /// Started early so `lastExternal` is known from launch.
+    private let frontmost: FrontmostApp
+    private let onboardingWindow: OnboardingWindowController
+
+    private var started = false
+    /// The General preferences as last applied (to tell which one the user just changed).
+    private var lastGeneral = GeneralPreferences()
+    private var cancellables: Set<AnyCancellable> = []
+
+    private init() {
+        let paths = AppPaths()
+        self.paths = paths
+        settingsStore = SettingsStore(url: paths.settings)
+        let loaded = settingsStore.load()
+        settings = loaded
+        let box = LockedBox(loaded)
+        settingsBox = box
+
+        // View models first: the controllers below fill in their state and actions.
+        let microphone = MicrophoneViewModel(selectedDeviceID: loaded.inputDeviceUID)
+        let speech = SpeechEngineViewModel(selectedEngine: loaded.engine)
+        let claudeModel = ClaudeViewModel()
+        let glossaryModel = GlossaryViewModel()
+        let models = DevshoutViewModels(microphone: microphone, speech: speech, claude: claudeModel,
+                                        glossary: glossaryModel)
+        self.models = models
+
+        // Locals first, then the stored properties: nothing reads `self` before it is fully initialised.
+        let history = HistoryStore(root: paths.recordings)
+        let glossary = GlossaryController(url: paths.glossary, model: glossaryModel)
+        let engines = EngineController(selected: loaded.engine, locations: paths.models, model: speech)
+        let claude = ClaudeController(paths: paths, pathOverride: loaded.claudePathOverride, model: claudeModel)
+        let levelMeter = LevelMeterController(level: microphone.level, scratch: paths.meterScratch)
+
+        // The dictation recorder feeds the same level model as the meters, which the pill's waveform draws.
+        let level = microphone.level
+        let recorder = MicRecorder(deviceUID: loaded.inputDeviceUID, levelHandler: { measured in
+            let value = measured.meterValue()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { level.push(value) }
+            }
+        })
+        let vad = SileroVAD(baseDirectory: paths.root)
+        let sounds = Sounds(isEnabled: { box.value.soundsEnabled })
+        let paster = Paster(method: { box.value.pasteMethod == .accessibility ? .accessibility : .commandV })
+
+        let dictation = DictationController(
+            services: DictationController.Services(
+                settings: { box.value },
+                engines: engines,
+                claude: claude,
+                glossary: glossary.state,
+                history: history,
+                deliverer: paster,
+                recorder: recorder,
+                vad: vad,
+                sounds: sounds,
+                levelMeter: levelMeter
+            ),
+            pill: models.pill,
+            menuBar: models.menuBar
+        )
+
+        self.history = history
+        self.glossary = glossary
+        self.engines = engines
+        self.claude = claude
+        self.permissions = PermissionsController(microphone: microphone, accessibility: models.accessibility)
+        self.devices = InputDevicesController(microphone: microphone, selectedUID: loaded.inputDeviceUID)
+        self.levelMeter = levelMeter
+        self.recorder = recorder
+        self.vad = vad
+        self.sounds = sounds
+        self.dictation = dictation
+        self.frontmost = FrontmostApp.shared
+        self.onboardingWindow = OnboardingWindowController(model: models.onboarding)
+
+        wire()
+    }
+
+    // MARK: Launch
+
+    /// Called once from `applicationDidFinishLaunching`.
+    func start() {
+        guard !started else { return }
+        started = true
+        paths.createFolders()
+
+        // History housekeeping off the main actor: recover recordings cut short by a quit or crash, and drop
+        // audio past its retention.
+        let history = history
+        let retention = settings.audioRetentionDays
+        Task.detached(priority: .utility) {
+            history.recoverOrphans()
+            history.applyRetention(now: Date(), audioDays: retention)
+        }
+
+        glossary.load()
+        glossary.state.setTokenCounter(engines.tokenCounter)
+        permissions.start()
+        claude.detect()
+        engines.prepareSelectedIfDownloaded()
+        // The VAD model is small; fetch and load it in the background (dictation copes without it).
+        let vad = vad
+        Task.detached(priority: .utility) { try? await vad.prepare() }
+        dictation.startHotkeys()
+        refreshHotkeyDisplay()
+        refreshStorage()
+
+        if !defaults.bool(forKey: AppDefaultsKey.onboardingCompleted) {
+            showOnboarding()
+        }
+    }
+
+    // MARK: Windows
+
+    func showOnboarding() {
+        models.onboarding.restart()
+        onboardingWindow.show()
+    }
+
+    func openSettings() {
+        // Refresh what Settings shows, then ask SettingsOpenerView to open the window (see SettingsOpener.swift).
+        if case .notFound = models.claude.install { claude.detect() }
+        if case .installFailed = models.claude.install { claude.detect() }
+        devices.refresh(selectedUID: settings.inputDeviceUID)
+        refreshStorage()
+        // Launch at login can be changed in System Settings → Login Items: show what is true now.
+        let launch = LaunchAtLogin.isEnabled
+        if models.general.preferences.launchAtLogin != launch {
+            models.general.sync { models.general.preferences.launchAtLogin = launch }
+        }
+        lastGeneral.launchAtLogin = launch
+        NotificationCenter.default.post(name: .devshoutOpenSettings, object: nil)
+    }
+
+    // MARK: Settings
+
+    private func updateSettings(_ change: (inout AppSettings) -> Void) {
+        var next = settings
+        change(&next)
+        guard next != settings else { return }
+        settings = next
+        settingsBox.value = next
+        do {
+            try settingsStore.save(next)
+        } catch {
+            NSLog("devshout: couldn't save settings.json: \(ErrorText.describe(error))")
+        }
+    }
+
+    // MARK: Wiring
+
+    private func wire() {
+        let models = models
+
+        // Engines and the glossary's Whisper token counter.
+        engines.onSelect = { [weak self] id in
+            guard let self else { return }
+            self.updateSettings { $0.engine = id }
+            self.glossary.state.setTokenCounter(self.engines.tokenCounter)
+        }
+        engines.isDictationActive = { [weak self] in self?.dictation.isActive ?? false }
+
+        claude.onPathOverride = { [weak self] path in self?.updateSettings { $0.claudePathOverride = path } }
+
+        // Microphone: device choice and the level meter.
+        devices.onSelect = { [weak self] uid in
+            guard let self else { return }
+            self.updateSettings { $0.inputDeviceUID = uid }
+            self.recorder.deviceUID = uid
+            self.levelMeter.setDevice(uid)
+        }
+        levelMeter.setDevice(settings.inputDeviceUID)
+        models.microphone.actions.startLevelMonitoring = { [weak self] in self?.levelMeter.setWanted(true) }
+        models.microphone.actions.stopLevelMonitoring = { [weak self] in self?.levelMeter.setWanted(false) }
+
+        wireGeneral()
+        wireModes()
+        wireApps()
+        wirePrivacy()
+        wireHotkeys()
+
+        // Menu bar.
+        models.menuBar.sync { models.menuBar.defaultMode = settings.defaultMode }
+        models.menuBar.actions = MenuBarViewModel.Actions(
+            toggleDictation: { [weak self] in self?.dictation.toggleFromMenu() },
+            cancelDictation: { [weak self] in self?.dictation.cancelFromMenu() },
+            setDefaultMode: { [weak self] mode in self?.updateSettings { $0.defaultMode = mode } },
+            openOnboarding: { [weak self] in self?.showOnboarding() },
+            openSettings: { [weak self] in self?.openSettings() }
+        )
+
+        // Onboarding.
+        models.onboarding.onFinish = { [weak self] in
+            guard let self else { return }
+            self.defaults.set(true, forKey: AppDefaultsKey.onboardingCompleted)
+            self.onboardingWindow.close()
+        }
+        dictation.tryIt = DictationController.TryIt(
+            isActive: { [weak self] in
+                guard let self else { return false }
+                return self.onboardingWindow.isFrontmost && self.models.onboarding.step == .tryIt
+            },
+            deliver: { [weak self] raw, cleaned, delivered in
+                guard let self else { return }
+                let onboarding = self.models.onboarding
+                let existing = onboarding.tryItText.trimmingCharacters(in: .whitespacesAndNewlines)
+                onboarding.tryItText = existing.isEmpty ? delivered : existing + " " + delivered
+                onboarding.tryItResult = TryItResult(raw: raw, cleaned: cleaned)
+            }
+        )
+        dictation.onFinished = { [weak self] in self?.refreshStorage() }
+    }
+
+    private func wireGeneral() {
+        let general = models.general
+        lastGeneral = Self.preferences(from: settings)
+        general.sync { general.preferences = lastGeneral }
+        general.onChange = { [weak self] preferences in self?.applyGeneral(preferences) }
+        general.reopenOnboarding = { [weak self] in self?.showOnboarding() }
+    }
+
+    private func applyGeneral(_ preferences: GeneralPreferences) {
+        // Only touch the login item when that toggle itself changed: it may have been changed in System Settings
+        // since, and an unrelated change here mustn't undo that.
+        let launchToggled = preferences.launchAtLogin != lastGeneral.launchAtLogin
+        lastGeneral = preferences
+        if launchToggled, preferences.launchAtLogin != LaunchAtLogin.isEnabled {
+            do {
+                try LaunchAtLogin.setEnabled(preferences.launchAtLogin)
+                if LaunchAtLogin.status == .requiresApproval { LaunchAtLogin.openSystemSettings() }
+            } catch {
+                NSLog("devshout: launch at login: \(ErrorText.describe(error))")
+            }
+            // Show what macOS actually did.
+            let actual = LaunchAtLogin.isEnabled
+            if actual != preferences.launchAtLogin {
+                let general = models.general
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        general.sync { general.preferences.launchAtLogin = actual }
+                        AppCoordinator.shared.lastGeneral.launchAtLogin = actual
+                    }
+                }
+            }
+        }
+        let behaviour: HotkeyBehaviour
+        switch preferences.hotkeyBehaviour {
+        case .tapOrHold: behaviour = .tapToggleHoldToTalk
+        case .toggleOnly: behaviour = .toggleOnly
+        case .holdOnly: behaviour = .holdOnly
+        }
+        updateSettings {
+            $0.hotkeyBehaviour = behaviour
+            $0.soundsEnabled = preferences.playsSounds
+            $0.pasteMethod = preferences.pasteMethod == .accessibility ? .accessibility : .commandV
+            $0.showLivePreview = preferences.showsLivePreview
+        }
+        dictation.setBehaviour(behaviour)
+    }
+
+    private static func preferences(from settings: AppSettings) -> GeneralPreferences {
+        var preferences = GeneralPreferences()
+        preferences.launchAtLogin = LaunchAtLogin.isEnabled
+        switch settings.hotkeyBehaviour {
+        case .tapToggleHoldToTalk: preferences.hotkeyBehaviour = .tapOrHold
+        case .toggleOnly: preferences.hotkeyBehaviour = .toggleOnly
+        case .holdOnly: preferences.hotkeyBehaviour = .holdOnly
+        }
+        preferences.playsSounds = settings.soundsEnabled
+        preferences.pasteMethod = settings.pasteMethod == .accessibility ? .accessibility : .commandV
+        preferences.showsLivePreview = settings.showLivePreview
+        return preferences
+    }
+
+    private func wireModes() {
+        let modes = models.modes
+        modes.configs = settings.modes
+        var instructions: [ModeID: String] = [:]
+        for mode in ModeID.allCases {
+            if let text = PromptBuilder.defaultInstructions(for: mode) { instructions[mode] = text }
+        }
+        modes.defaultInstructions = instructions
+        modes.onChange = { [weak self] config in self?.updateSettings { $0.modes[config.id] = config } }
+    }
+
+    private func wireApps() {
+        let apps = models.apps
+        let rules = settings.perAppModes.map { bundleID, mode in
+            AppModeRule(bundleID: bundleID, name: Self.appName(for: bundleID), mode: mode)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        apps.sync { apps.rules = rules }
+        apps.runningApps = {
+            let me = ProcessInfo.processInfo.processIdentifier
+            return NSWorkspace.shared.runningApplications.compactMap { app in
+                guard app.activationPolicy == .regular, app.processIdentifier != me,
+                      let bundleID = app.bundleIdentifier else { return nil }
+                return AppCandidate(bundleID: bundleID, name: app.localizedName ?? bundleID, url: app.bundleURL)
+            }
+        }
+        apps.onChange = { [weak self] rules in
+            let table = Dictionary(rules.map { ($0.bundleID, $0.mode) }, uniquingKeysWith: { _, last in last })
+            self?.updateSettings { $0.perAppModes = table }
+        }
+    }
+
+    private static func appName(for bundleID: String) -> String {
+        if let name = FrontmostApp.name(forBundleID: bundleID) { return name }
+        if let suggestion = AppModeRule.suggestions.first(where: { $0.bundleID == bundleID }) { return suggestion.name }
+        return bundleID
+    }
+
+    private func wirePrivacy() {
+        let privacy = models.privacy
+        privacy.sync { privacy.audioRetention = Self.retention(from: settings.audioRetentionDays) }
+        privacy.actions = PrivacyViewModel.Actions(
+            setAudioRetention: { [weak self] retention in
+                guard let self else { return }
+                self.updateSettings { $0.audioRetentionDays = retention.days }
+                let history = self.history
+                Task.detached(priority: .utility) {
+                    history.applyRetention(now: Date(), audioDays: retention.days)
+                }
+                self.refreshStorage()
+            },
+            showInFinder: { [weak self] in
+                guard let self else { return }
+                NSWorkspace.shared.open(self.paths.root)
+            },
+            deleteAllHistory: { [weak self] in
+                guard let self else { return }
+                let history = self.history
+                Task {
+                    let failure: String? = await Task.detached {
+                        do {
+                            try history.deleteAll()
+                            return nil
+                        } catch {
+                            return ErrorText.describe(error)
+                        }
+                    }.value
+                    if let failure { NSLog("devshout: delete all history: \(failure)") }
+                    self.refreshStorage()
+                }
+            }
+        )
+    }
+
+    private static func retention(from days: Int?) -> AudioRetention {
+        guard let days, days > 0 else { return .forever }
+        if days <= 7 { return .days7 }
+        if days <= 30 { return .days30 }
+        return .days90
+    }
+
+    /// Recording count and bytes on disk, for Settings → Privacy.
+    func refreshStorage() {
+        let history = history
+        let root = paths.recordings
+        let privacy = models.privacy
+        Task {
+            let stats: (count: Int, bytes: Int64) = await Task.detached(priority: .utility) {
+                (history.list().count, ModelLocations.directorySize(root))
+            }.value
+            if privacy.recordingCount != stats.count { privacy.recordingCount = stats.count }
+            if privacy.storageUsed != stats.bytes { privacy.storageUsed = stats.bytes }
+        }
+    }
+
+    // MARK: Hotkeys
+
+    private func wireHotkeys() {
+        models.hotkeys.recorder = { [weak self] slot in
+            AnyView(
+                KeyboardShortcuts.Recorder(for: slot.dictationHotkey.name, onChange: { _ in
+                    self?.refreshHotkeyDisplay()
+                })
+                .fixedSize()
+            )
+        }
+        // Also catch changes made elsewhere (KeyboardShortcuts posts this after storing a shortcut).
+        NotificationCenter.default.publisher(for: Notification.Name("KeyboardShortcuts_shortcutByNameDidChange"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshHotkeyDisplay() }
+            .store(in: &cancellables)
+    }
+
+    func refreshHotkeyDisplay() {
+        var displays: [HotkeySlot: HotkeyDisplay] = [:]
+        for slot in HotkeySlot.allCases {
+            if let shortcut = KeyboardShortcuts.getShortcut(for: slot.dictationHotkey.name) {
+                displays[slot] = HotkeyDisplay(shortcut)
+            }
+        }
+        if models.hotkeys.hotkeys != displays { models.hotkeys.hotkeys = displays }
+    }
+}
+
+// MARK: - Hotkey mapping
+
+extension HotkeySlot {
+    /// The DevshoutMac hotkey behind this UI slot.
+    var dictationHotkey: DictationHotkey {
+        switch self {
+        case .appDefault: .dictate
+        case .tidy: .dictateTidy
+        case .structure: .dictateStructure
+        case .raw: .dictateRaw
+        }
+    }
+}
+
+extension HotkeyDisplay {
+    /// "⌥Space" from a KeyboardShortcuts shortcut.
+    @MainActor
+    init(_ shortcut: KeyboardShortcuts.Shortcut) {
+        var modifiers: Modifiers = []
+        let flags = shortcut.modifiers
+        if flags.contains(.control) { modifiers.insert(.control) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.command) { modifiers.insert(.command) }
+        // `description` is the modifier symbols followed by the key ("⌥Space"); keep the key part.
+        let symbols: Set<Character> = ["⌃", "⌥", "⇧", "⌘", "🌐"]
+        let key = String(shortcut.description.drop(while: { symbols.contains($0) }))
+        self.init(modifiers: modifiers, key: key.isEmpty ? "?" : key)
+    }
+}

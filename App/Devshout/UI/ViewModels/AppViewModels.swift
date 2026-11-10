@@ -325,6 +325,9 @@ final class RecordingPillViewModel: ObservableObject {
     @Published var finalDuration: TimeInterval? = nil
     /// The latest chunk's transcript, for the optional second line.
     @Published var liveText: String? = nil
+    /// A short note for the second line that wins over everything else (e.g. "Still finishing the last
+    /// dictation", or the details of an error). Wiring sets and clears it.
+    @Published var notice: String? = nil
     @Published var showsLiveText = true
     /// Set by `OverlayPanel` from its own tracking area (SwiftUI hover may not fire in a non-key panel).
     @Published var isHovering = false
@@ -343,6 +346,7 @@ final class RecordingPillViewModel: ObservableObject {
         startedAt = date
         finalDuration = nil
         liveText = nil
+        notice = nil
         phase = .recording
         levels.reset()
     }
@@ -355,6 +359,7 @@ final class RecordingPillViewModel: ObservableObject {
     var title: String { phase.title(mode: mode) }
 
     var secondLine: String? {
+        if let notice, !notice.isEmpty { return notice }
         if let subtitle = phase.subtitle { return subtitle }
         guard showsLiveText, phase.allowsLiveText, let liveText, !liveText.isEmpty else { return nil }
         return liveText
