@@ -208,7 +208,13 @@ import Testing
     @Test func everyPrefixOfPlainURLGivesNothingOrTheWholeURL() {
         let raw = SetupTokenSamples.withoutHyperlinks(CapturedSetupToken.narrow)
         let scalars = Array(raw.unicodeScalars)
-        for end in 0...scalars.count {
+        // Every prefix is quadratic and took over 30 s on CI, starving the timing-sensitive tests running in
+        // parallel. A coarse stride plus every prefix around the URL keeps the coverage that matters.
+        let urlStart = raw.unicodeScalars.distance(from: raw.unicodeScalars.startIndex,
+                                                   to: raw.range(of: "https://")?.lowerBound.samePosition(in: raw.unicodeScalars) ?? raw.unicodeScalars.startIndex)
+        let near = Set(max(0, urlStart - 20)...min(scalars.count, urlStart + 400))
+        let ends = Set(stride(from: 0, through: scalars.count, by: 11)).union(near).union([scalars.count]).sorted()
+        for end in ends {
             var view = String.UnicodeScalarView()
             view.append(contentsOf: scalars[0..<end])
             if let url = SetupTokenParser.parse(String(view)).signInURL {
