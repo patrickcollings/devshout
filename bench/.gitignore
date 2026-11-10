@@ -1,0 +1,4 @@
+# Recordings stay on the Mac (audio never leaves it). The folder itself is kept via .gitkeep.
+audio/*.wav
+audio/*.m4a
+audio/*.mp3
