@@ -4,7 +4,7 @@ import Testing
 
 /// Synthetic VAD series for the planner. Frames are 4,096 samples (256 ms), as FluidAudio's Silero VAD gives.
 /// With the defaults that means: padding 2,400 samples, a natural cut needs 3 silent frames (≥ 0.6 s) after
-/// 12 speech frames (≥ 3 s), and a chunk with fewer than 2 speech frames (< 0.3 s) is dropped.
+/// 12 speech frames (≥ 3 s), and a chunk with one speech frame (0.256 s ≥ 0.25 s) is kept.
 struct Scenario {
     static let frame = 4096
     static let speech: Float = 0.9
@@ -64,7 +64,7 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
         #expect(abs(config.speechExitThreshold - 0.15) < 0.0001)
         #expect(config.forcedCutSearchWindow == 2)
         #expect(config.forcedCutOverlap == 1)
-        #expect(config.minSpeechToTranscribe == 0.3)
+        #expect(config.minSpeechToTranscribe == 0.25)
         #expect(config.padding == 0.15)
     }
 
@@ -259,10 +259,23 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
         #expect(ChunkPlanner.plan(samples: [], probabilities: [], frameSize: frame, maxChunkDuration: 14.5).isEmpty)
     }
 
+    @Test func aSingleSpeechFrameIsEnough() {
+        // "Yes": one VAD frame (0.256 s) of speech in a short recording. It used to be dropped as no speech.
+        let one = Scenario().silence(3).speech(1).silence(3).plan()
+        #expect(one.count == 1)
+        #expect(one.first?.startSample == 3 * frame - pad)
+        #expect(one.first?.endSample == 4 * frame + pad)
+        // The same at the very start and the very end of a recording, where there is no room for padding.
+        #expect(Scenario().speech(1).silence(3).plan().map(\.startSample) == [0])
+        #expect(Scenario().silence(3).speech(1).plan().map(\.endSample) == [4 * frame])
+        #expect(Scenario().speech(1).plan().count == 1)
+    }
+
     @Test func tooLittleSpeechIsDropped() {
-        // One speech frame (0.256 s) is under 0.3 s; two frames (0.512 s) is enough.
-        #expect(Scenario().silence(10).speech(1).silence(10).plan().isEmpty)
-        let two = Scenario().silence(10).speech(2).silence(10).plan()
+        // With a minimum above one frame, one speech frame (0.256 s) is dropped; two frames (0.512 s) are enough.
+        let strict = ChunkPlannerConfig(minSpeechToTranscribe: 0.3)
+        #expect(Scenario().silence(10).speech(1).silence(10).plan(config: strict).isEmpty)
+        let two = Scenario().silence(10).speech(2).silence(10).plan(config: strict)
         #expect(two.count == 1)
         #expect(two.first?.startSample == 10 * frame - pad)
         #expect(two.first?.endSample == 12 * frame + pad)
@@ -271,7 +284,7 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
     @Test func droppedChunksKeepIndexesConsecutive() {
         // A cough after the first chunk, then 20 s of silence: the cough's chunk is cut at the limit and dropped.
         let scenario = Scenario().speech(15).silence(4).speech(1).silence(80).speech(15).silence(4)
-        let chunks = scenario.plan()
+        let chunks = scenario.plan(config: ChunkPlannerConfig(minSpeechToTranscribe: 0.3))
         #expect(chunks.map(\.index) == [0, 1])
         #expect(chunks.last?.startSample == 100 * frame - pad)
         #expect(chunks.last?.overlapBefore == 0)
