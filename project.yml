@@ -29,6 +29,8 @@ targets:
     platform: macOS
     sources:
       - path: App/Devshout
+        excludes:
+          - "**/*.md"
       - path: App/Resources
     dependencies:
       - package: Core

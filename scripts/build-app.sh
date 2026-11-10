@@ -11,6 +11,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 configuration="${1:-Debug}"
+
+# xcode-select may point at the Command Line Tools, which can't build the app.
+if [ -z "${DEVELOPER_DIR:-}" ] && [ "$(xcode-select -p)" = "/Library/Developer/CommandLineTools" ]; then
+  export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+fi
 xcodegen generate --quiet
 
 # Xcode resolves packages separately from SwiftPM: pin it to the versions Mac/ was built and tested with.
