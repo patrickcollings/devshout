@@ -11,6 +11,7 @@ import Testing
         var root: URL
         var record: URL
         var claude: URL
+        var runner: RecordingRunner
     }
 
     func setup(mode: String, extra: [String: String] = [:],
@@ -25,15 +26,16 @@ import Testing
         let claude = try ClaudeTestSupport.fakeClaude(mode: mode, extraEnvironment: env, in: bin,
                                                       settingsDirectory: root.appendingPathComponent("config"))
         let installation = ClaudeInstallation(url: claude, version: ClaudeVersion(2, 1, 300))
+        let runner = RecordingRunner(FoundationProcessRunner(killGracePeriod: 0.5, outputDrainTimeout: 0.5))
         let cleaner = ClaudeCLICleaner(
             installation: { installed ? installation : nil },
             credential: { credential },
             configDirectory: root.appendingPathComponent("config"),
             workingDirectory: root.appendingPathComponent("cwd"),
-            runner: FoundationProcessRunner(killGracePeriod: 0.5, outputDrainTimeout: 0.5),
+            runner: runner,
             host: ClaudeHostEnvironment(home: root.path, user: "patrick", tmpDir: root.path),
             temporaryDirectory: root.appendingPathComponent("tmp"))
-        return Setup(cleaner: cleaner, root: root, record: record, claude: claude)
+        return Setup(cleaner: cleaner, root: root, record: record, claude: claude, runner: runner)
     }
 
     func mode(_ id: ModeID, timeout: TimeInterval? = nil) -> ModeConfig {
@@ -154,14 +156,23 @@ import Testing
         }
     }
 
+    /// The child was stopped at the limit rather than waited for. `elapsed` is the runner's own measurement, from
+    /// spawning the child to its exit, taken on the runner's thread: limit + SIGTERM (+ grace + SIGKILL) + draining
+    /// the pipes, about 2 s at most with this runner's settings. It doesn't include the wait for a task thread
+    /// before and after, which is what made a stopwatch around `clean` take 36-44 s on CI.
+    func expectStoppedAtTheLimit(_ s: Setup, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(s.runner.results.count == 1, sourceLocation: sourceLocation)
+        guard let run = s.runner.results.first else { return }
+        #expect(run.timedOut, sourceLocation: sourceLocation)
+        #expect(run.elapsed < 10, "the child ran for \(run.elapsed) s", sourceLocation: sourceLocation)
+    }
+
     @Test func hangTimesOut() async {
-        let s = try! setup(mode: "hang")
-        let start = Date()
+        let s = try! setup(mode: "hang")  // the child would take 600 s
         await expectCleanError({ $0 == .timedOut(after: 0.5) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.5), glossary: "")
         }
-        // Generous: other suites can keep the cooperative pool busy for a while. The child would take 600 s.
-        #expect(Date().timeIntervalSince(start) < 25)
+        expectStoppedAtTheLimit(s)
     }
 
     @Test func slowWithinTheLimitSucceeds() async throws {
@@ -173,11 +184,10 @@ import Testing
 
     @Test func slowPastTheLimitTimesOut() async {
         let s = try! setup(mode: "slow", extra: ["FAKE_CLAUDE_DELAY": "60"])
-        let start = Date()
         await expectCleanError({ $0 == .timedOut(after: 0.3) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.3), glossary: "")
         }
-        #expect(Date().timeIntervalSince(start) < 25)
+        expectStoppedAtTheLimit(s)
     }
 
     // MARK: A run that timed out after answering
@@ -291,14 +301,15 @@ import Testing
         }
     }
 
-    @Test func cancellationStopsClaude() async throws {
+    // The child runs for 600 s unless cancelling stops it, so finishing at all (inside the time limit, which is far
+    // above any wait for a task thread) is the proof. No stopwatch, for the reason given at expectStoppedAtTheLimit.
+    @Test(.timeLimit(.minutes(3))) func cancellationStopsClaude() async throws {
         let s = try setup(mode: "hang")
         let cleaner = s.cleaner
         let config = mode(.tidy, timeout: 30)
         let raw = transcript
         let task = Task { try await cleaner.clean(raw, mode: config, glossary: "") }
         try await Task.sleep(nanoseconds: 300_000_000)
-        let start = Date()
         task.cancel()
         do {
             _ = try await task.value
@@ -306,6 +317,5 @@ import Testing
         } catch let error as CleanError {
             #expect(error == .processFailed(exitCode: -1, message: "Cancelled"))
         }
-        #expect(Date().timeIntervalSince(start) < 25)
     }
 }

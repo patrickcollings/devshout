@@ -376,11 +376,16 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
         }
     }
 
-    @Test(arguments: 0..<40)
+    // One case at a time, and each kept light (30 to 90 s of audio; the five-minute tests above cover long
+    // recordings). Swift Testing runs every test and every case on Swift's task threads, of which a CI runner has
+    // two. These cases are plain CPU work that never suspends, and in parallel at 75 to 220 s of audio each they
+    // held both threads for over 20 s; any async test waiting on a timer or a child process could not resume until
+    // they were done, and the ones that timed themselves failed.
+    @Test(.serialized, arguments: 0..<40)
     func streamingMatchesBatch(seed: UInt64) {
         var random = SplitMix64(seed: seed)
         var scenario = Scenario()
-        while scenario.probabilities.count < 300 + Int(seed) * 15 {
+        while scenario.probabilities.count < 120 + Int(seed) * 6 {
             let kind = random.next(below: 4)
             let length = 1 + random.next(below: kind == 0 ? 80 : 12)
             switch kind {
@@ -392,10 +397,11 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
         }
         scenario.tailSamples = random.next(below: frame)
         let max = [14.5, 28, 5][Int(seed % 3)]
-        let batch = scenario.plan(max: max)
+        let samples = scenario.samples
+        let batch = ChunkPlanner.plan(samples: samples, probabilities: scenario.probabilities, frameSize: frame,
+                                      maxChunkDuration: max)
         checkInvariants(batch, total: scenario.sampleCount, max: max)
 
-        let samples = scenario.samples
         var planner = ChunkPlanner(maxChunkDuration: max, frameSize: frame)
         var streamed: [AudioChunk] = []
         var position = 0

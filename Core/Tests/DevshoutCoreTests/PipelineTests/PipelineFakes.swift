@@ -11,6 +11,21 @@ final class Locked<Value>: @unchecked Sendable {
     func mutate<R>(_ body: (inout Value) -> R) -> R { lock.lock(); defer { lock.unlock() }; return body(&value) }
 }
 
+/// A call that never returns, whatever happens to its task: a stuck Core ML call, a `claude` that never answers.
+///
+/// It really is for ever (nothing resumes it), so a test's result can't depend on how long the hang lasts compared
+/// with a timer that may fire late on a busy machine. The continuations are kept so that they aren't reported as
+/// leaked; the suspended tasks cost nothing and end with the test process.
+enum Hang {
+    private static let parked = Locked<[CheckedContinuation<Never, Never>]>([])
+
+    static func forever() async -> Never {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Never, Never>) in
+            parked.mutate { $0.append(continuation) }
+        }
+    }
+}
+
 struct FakeError: Error, LocalizedError, Hashable {
     var message: String
     var errorDescription: String? { message }
@@ -145,11 +160,7 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
             case .fail:
                 throw FakeError(message: "engine exploded")
             case .hang:
-                // A dispatch timer rather than Task.sleep, so cancellation doesn't end it (see FakeCleaner.hanging).
-                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
-                }
-                throw FakeError(message: "answered far too late")
+                await Hang.forever()
             case .empty:
                 text = ""
             }
@@ -180,14 +191,8 @@ final class FakeCleaner: TextCleaner, @unchecked Sendable {
     static func failing(_ error: CleanError) -> FakeCleaner { FakeCleaner { _, _, _ in throw error } }
 
     static func hanging() -> FakeCleaner {
-        FakeCleaner { raw, mode, _ in
-            // Ignores cancellation on purpose: the session mustn't wait for it.
-            // A dispatch timer, not Task.sleep: after cancellation Task.sleep throws at once, which would spin.
-            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
-            }
-            return CleanResult(text: "too late", model: mode.claudeModel, elapsed: 10)
-        }
+        // Ignores cancellation on purpose: the session mustn't wait for it.
+        FakeCleaner { _, _, _ in await Hang.forever() }
     }
 }
 
@@ -240,12 +245,7 @@ struct SessionHarness {
             history: history,
             planChunks: { samples in
                 planned.mutate { $0.append(samples.count) }
-                if planHangs {
-                    // A stuck VAD call. Ignores cancellation (see FakeCleaner.hanging).
-                    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                        DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
-                    }
-                }
+                if planHangs { await Hang.forever() }  // a stuck VAD call
                 if let planError { throw planError }
                 // Each chunk is 14.5 s of the recording, as Parakeet's are.
                 return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 232_000, endSample: ($0 + 1) * 232_000,

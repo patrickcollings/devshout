@@ -72,16 +72,18 @@ import Testing
         #expect(saved.deliveredText == "Part 0 Part 1 Part 2")
     }
 
-    @Test func hangingCleanerIsAbandonedAfterTimeoutPlusGrace() async throws {
+    // The cleaner in this test never answers at all, so `stop()` returning is the proof that the session gave up on
+    // it. No stopwatch: when the suite runs in parallel on a 2-core CI runner, a test can wait tens of seconds for
+    // its turn on Swift's task threads, and a wall-clock bound measures that queue rather than the session. The
+    // time limit is only there so that a session which does wait for ever fails here instead of hanging the run.
+    @Test(.timeLimit(.minutes(3))) func hangingCleanerIsAbandonedAfterTimeoutPlusGrace() async throws {
         var settings = AppSettings()
         settings.modes[.tidy]?.timeout = 0.05
         let h = try SessionHarness(cleaner: .hanging(), settings: settings,
                                    options: DictationOptions(cleanGracePeriod: 0.05))
         defer { h.temp.remove() }
         try await h.session.start(mode: .tidy, targetApp: nil)
-        let started = Date()
         let result = try #require(await h.session.stop())
-        #expect(Date().timeIntervalSince(started) < 9) // the fake hangs for 10 s; generous for loaded CI machines
         #expect(result.cleanError == .timedOut(after: 0.05))
         #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
     }
@@ -288,7 +290,7 @@ import Testing
         #expect(h.deliverer.delivered.get().isEmpty)
     }
 
-    // MARK: Time limits (the fakes hang for 10 s; the limits here are 50 ms)
+    // MARK: Time limits (the fakes hang for ever; the limits here are 50 ms)
 
     let quickLimits = DictationOptions(minimumChunkTimeout: 0.05, chunkTimeoutPerAudioSecond: 0,
                                        minimumPlanningTimeout: 0.05, planningTimeoutPerAudioSecond: 0)
