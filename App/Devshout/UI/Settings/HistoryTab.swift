@@ -131,6 +131,7 @@ private struct HistoryDetail: View {
     @Binding var confirmingDelete: Bool
 
     var body: some View {
+        let sections = HistoryText.sections(for: recording)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 ModeChip(mode: recording.mode, compact: true)
@@ -154,16 +155,16 @@ private struct HistoryDetail: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            HistoryRerunStatus(recording: recording, model: model)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let text = HistoryText.bestText(for: recording) {
-                        HistoryTextBlock(title: HistoryText.bestTitle(for: recording), text: text)
-                    } else {
+                    if sections.isEmpty {
                         Text("No text was transcribed.")
                             .foregroundStyle(.secondary)
                     }
-                    if let heard = HistoryText.heardText(for: recording) {
-                        HistoryTextBlock(title: "As heard, before Claude", text: heard)
+                    ForEach(sections) { section in
+                        HistoryTextBlock(section: section)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,9 +172,10 @@ private struct HistoryDetail: View {
 
             HStack {
                 Button("Copy") {
-                    if let text = HistoryText.bestText(for: recording) { UIClipboard.copy(text) }
+                    if let first = sections.first { UIClipboard.copy(first.text) }
                 }
-                .disabled(HistoryText.bestText(for: recording) == nil)
+                .disabled(sections.isEmpty)
+                .help(sections.count > 1 ? "Copy the first text shown" : "Copy the text")
                 Button("Show in Finder") { model.showInFinder(recording.id) }
                 Spacer()
                 Button("Delete…", role: .destructive) { confirmingDelete = true }
@@ -192,9 +194,27 @@ private struct HistoryActionBar: View {
     var body: some View {
         HStack(spacing: 8) {
             playButton
+            rerunMenu
             Spacer(minLength: 0)
         }
         .controlSize(.small)
+    }
+
+    private var rerunMenu: some View {
+        Menu {
+            ForEach(HistoryViewModel.rerunModes, id: \.self) { mode in
+                Button {
+                    model.rerun(recording.id, mode: mode)
+                } label: {
+                    Label(mode.displayName, systemImage: mode.symbolName)
+                }
+            }
+        } label: {
+            Label("Re-run", systemImage: "arrow.clockwise")
+        }
+        .fixedSize()
+        .disabled(!model.canRerun(recording))
+        .help(HistoryText.rerunHelp)
     }
 
     @ViewBuilder
@@ -224,18 +244,65 @@ private struct HistoryActionBar: View {
     }
 }
 
+/// A re-run through Claude: a spinner with Cancel while it runs, or why the last one failed.
+private struct HistoryRerunStatus: View {
+    let recording: Recording
+    @ObservedObject var model: HistoryViewModel
+
+    var body: some View {
+        switch model.reruns[recording.id] {
+        case .running(let mode, let claudeModel):
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(HistoryText.rerunProgress(mode: mode, model: claudeModel))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button("Cancel") { model.cancelRerun(recording.id) }
+                    .controlSize(.small)
+            }
+        case .failed(_, let message):
+            StatusLabel(text: message, tone: .warning)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+        case nil:
+            EmptyView()
+        }
+    }
+}
+
+/// One titled text, with its own copy button.
 private struct HistoryTextBlock: View {
-    let title: String
-    let text: String
+    let section: HistorySection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(text)
+            HStack(spacing: 6) {
+                Text(section.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button {
+                    UIClipboard.copy(section.text)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .help("Copy this text")
+                .accessibilityLabel("Copy this text")
+            }
+            Text(section.text)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+            if let note = section.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -261,6 +328,24 @@ private struct HistoryTextBlock: View {
 #Preview("History: audio deleted") {
     HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings,
                                                selection: PreviewData.recordings[3].id))
+}
+
+#Preview("History: several versions") {
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings,
+                                               selection: PreviewData.recordings[1].id))
+}
+
+#Preview("History: re-running") {
+    let model = HistoryViewModel(recordings: PreviewData.recordings)
+    model.rerunStarted(PreviewData.recordings[0].id, mode: .structure, model: "sonnet")
+    return HistorySettingsTab(model: model)
+}
+
+#Preview("History: re-run failed") {
+    let model = HistoryViewModel(recordings: PreviewData.recordings)
+    model.rerunFailed(PreviewData.recordings[0].id, mode: .structure,
+                      message: HistoryText.rerunFailed(mode: .structure, .timedOut(after: 45)))
+    return HistorySettingsTab(model: model)
 }
 
 #Preview("History: audio file missing") {

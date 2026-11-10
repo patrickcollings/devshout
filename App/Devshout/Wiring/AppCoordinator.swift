@@ -27,7 +27,7 @@ final class AppCoordinator {
     private let defaults = UserDefaults.standard
 
     let history: HistoryStore
-    /// What Settings → History does with a recording (play its audio).
+    /// What Settings → History does with a recording (play its audio, re-run it through Claude).
     let historyActions: HistoryController
     let glossary: GlossaryController
     let engines: EngineController
@@ -104,7 +104,8 @@ final class AppCoordinator {
         )
 
         self.history = history
-        self.historyActions = HistoryController(model: models.history, history: history)
+        self.historyActions = HistoryController(model: models.history, history: history, claude: claude,
+                                                glossary: glossary.state, settings: { box.value })
         self.glossary = glossary
         self.engines = engines
         self.claude = claude
@@ -407,6 +408,7 @@ final class AppCoordinator {
     private func wireHistory() {
         let actions = historyActions
         actions.isRecording = { [weak self] in self?.dictation.isRecording ?? false }
+        actions.onChange = { [weak self] in self?.refreshStorage() }
         // Never play over a recording: the microphone would pick the old dictation up.
         dictation.onWillStart = { [weak actions] in actions?.stopPlayback() }
         models.history.actions = HistoryViewModel.Actions(
@@ -426,7 +428,9 @@ final class AppCoordinator {
                 NSWorkspace.shared.activateFileViewerSelecting([folder])
             },
             play: { [weak actions] id in actions?.play(id) },
-            stopPlayback: { [weak actions] in actions?.stopPlayback() }
+            stopPlayback: { [weak actions] in actions?.stopPlayback() },
+            rerun: { [weak actions] id, mode in actions?.rerun(id, mode: mode) },
+            cancelRerun: { [weak actions] id in actions?.cancelRerun(id) }
         )
     }
 

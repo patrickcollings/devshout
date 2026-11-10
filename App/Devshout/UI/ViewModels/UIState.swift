@@ -507,6 +507,24 @@ enum HistoryPlayback: Hashable, Sendable {
     case unavailable(UUID, message: String)
 }
 
+/// A recording's transcript being sent to Claude again from History ("Re-run").
+enum HistoryRerunState: Hashable, Sendable {
+    /// `model` is the `ModeConfig.claudeModel` value ("haiku").
+    case running(mode: ModeID, model: String)
+    /// `message` is ready to show ("Claude isn't connected. …").
+    case failed(mode: ModeID, message: String)
+}
+
+/// One titled text in the History detail pane: a clean version, what was pasted, or the transcript as heard.
+struct HistorySection: Hashable, Sendable, Identifiable {
+    var id: String
+    /// "Tidy · Haiku · 10 Nov 2026, 14:02", "Pasted into Slack", "As heard, before Claude".
+    var title: String
+    var text: String
+    /// A line under the text (the clean-up's warnings), when there is one.
+    var note: String? = nil
+}
+
 // MARK: - Recording pill
 
 /// What the overlay pill is showing (PLAN §7.3). Showing and hiding the panel is up to the caller.

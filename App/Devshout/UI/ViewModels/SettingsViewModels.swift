@@ -354,7 +354,15 @@ final class HistoryViewModel: ObservableObject {
         var play: @MainActor (UUID) -> Void = { _ in }
         /// Stop whatever is playing. Called whether or not anything is, so it must be safe at any time.
         var stopPlayback: @MainActor () -> Void = {}
+        /// Send the recording's transcript to Claude again in this mode and add the result to the recording as a
+        /// new version. Nothing is pasted. The wiring answers with `rerunStarted`, then `rerunFinished`,
+        /// `rerunFailed` or `rerunCancelled`.
+        var rerun: @MainActor (UUID, ModeID) -> Void = { _, _ in }
+        var cancelRerun: @MainActor (UUID) -> Void = { _ in }
     }
+
+    /// The modes a recording can be re-run in (the ones that use Claude).
+    static let rerunModes: [ModeID] = [.tidy, .structure]
 
     /// Newest first.
     @Published var recordings: [Recording] {
@@ -370,6 +378,8 @@ final class HistoryViewModel: ObservableObject {
         didSet { stopPlaybackUnlessSelected() }
     }
     @Published private(set) var playback: HistoryPlayback = .idle
+    /// Re-runs in progress, and the last failure, per recording.
+    @Published private(set) var reruns: [UUID: HistoryRerunState] = [:]
     var actions: Actions
 
     init(recordings: [Recording] = [], searchText: String = "", selection: UUID? = nil, actions: Actions = Actions()) {
@@ -445,5 +455,46 @@ final class HistoryViewModel: ObservableObject {
     func playbackUnavailable(_ id: UUID, message: String) {
         playback = .unavailable(id, message: message)
         stopPlaybackUnlessSelected()
+    }
+
+    // MARK: Re-run
+
+    func isRerunning(_ id: UUID) -> Bool {
+        if case .running = reruns[id] { return true }
+        return false
+    }
+
+    /// Whether there is a transcript to send and no re-run of it already going.
+    func canRerun(_ recording: Recording) -> Bool {
+        guard let transcript = recording.transcript else { return false }
+        return !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isRerunning(recording.id)
+    }
+
+    func rerun(_ id: UUID, mode: ModeID) {
+        guard !isRerunning(id) else { return }
+        reruns[id] = nil
+        actions.rerun(id, mode)
+    }
+
+    func cancelRerun(_ id: UUID) { actions.cancelRerun(id) }
+
+    // Wiring → model.
+
+    func rerunStarted(_ id: UUID, mode: ModeID, model: String) {
+        reruns[id] = .running(mode: mode, model: model)
+    }
+
+    /// The recording as saved, with its new version.
+    func rerunFinished(_ updated: Recording) {
+        reruns[updated.id] = nil
+        if let index = recordings.firstIndex(where: { $0.id == updated.id }) { recordings[index] = updated }
+    }
+
+    func rerunFailed(_ id: UUID, mode: ModeID, message: String) {
+        reruns[id] = .failed(mode: mode, message: message)
+    }
+
+    func rerunCancelled(_ id: UUID) {
+        reruns[id] = nil
     }
 }

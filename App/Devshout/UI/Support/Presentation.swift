@@ -363,11 +363,101 @@ enum HistoryText {
         }
     }
 
-    /// The transcript before clean-up, when it differs from the text shown first.
-    static func heardText(for recording: Recording) -> String? {
-        guard let heard = recording.transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !heard.isEmpty,
-              heard != bestText(for: recording) else { return nil }
-        return heard
+    /// The texts the detail pane shows, top to bottom: every clean version, newest first (so a re-run comes
+    /// first), then what was pasted when that is none of them, then the transcript as heard when it differs from
+    /// all of those. A dictation that was never re-run reads as before: "Pasted into Slack", then "As heard".
+    static func sections(for recording: Recording) -> [HistorySection] {
+        func trimmed(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        let delivered = trimmed(recording.deliveredText)
+        let versions = recording.versions.enumerated()
+            .filter { trimmed($0.element.text) != nil }
+            .sorted { a, b in
+                a.element.createdAt != b.element.createdAt ? a.element.createdAt > b.element.createdAt : a.offset > b.offset
+            }
+            .map(\.element)
+        // The version that was pasted is the oldest one with the pasted text (a re-run can give the same text).
+        let deliveredVersion = versions.last { trimmed($0.text) == delivered && delivered != nil }
+        let isOnlyVersion = versions.count == 1 && deliveredVersion != nil
+
+        var sections: [HistorySection] = []
+        for version in versions {
+            var title = isOnlyVersion ? bestTitle(for: recording) : versionTitle(version)
+            if !isOnlyVersion, version.id == deliveredVersion?.id, let note = deliveredNote(for: recording) {
+                title += " · " + note
+            }
+            sections.append(HistorySection(id: "version-\(version.id.uuidString)", title: title,
+                                           text: trimmed(version.text) ?? "",
+                                           note: version.warnings.isEmpty ? nil : version.warnings.joined(separator: " · ")))
+        }
+        if let delivered, deliveredVersion == nil {
+            sections.append(HistorySection(id: "delivered", title: bestTitle(for: recording), text: delivered))
+        }
+        if let transcript = trimmed(recording.transcript) {
+            if sections.isEmpty {
+                sections.append(HistorySection(id: "transcript", title: bestTitle(for: recording), text: transcript))
+            } else if !sections.contains(where: { $0.text == transcript }) {
+                sections.append(HistorySection(id: "heard", title: "As heard, before Claude", text: transcript))
+            }
+        }
+        return sections
+    }
+
+    /// "Structure · Sonnet · 10 Nov 2026, 14:02"
+    static func versionTitle(_ version: CleanVersion) -> String {
+        var parts = [version.mode.displayName]
+        if !version.model.isEmpty { parts.append(ClaudeModelOption.displayName(for: version.model)) }
+        parts.append("\(UIFormat.day(version.createdAt)), \(UIFormat.time(version.createdAt))")
+        return parts.joined(separator: " · ")
+    }
+
+    /// After the title of the version that was delivered: "pasted into Slack".
+    static func deliveredNote(for recording: Recording) -> String? {
+        guard let delivered = recording.delivered else { return nil }
+        switch delivered.method {
+        case .pasted: return delivered.appName.map { "pasted into \($0)" } ?? "pasted"
+        case .copiedOnly: return "copied to the clipboard"
+        case .failed: return "not pasted"
+        }
+    }
+
+    // Re-running through Claude.
+
+    static let rerunHelp = "Send the transcript to Claude again in another mode. Nothing is pasted: the result is added here to read and copy."
+
+    /// "Claude (Sonnet) is structuring…"
+    static func rerunProgress(mode: ModeID, model: String) -> String {
+        let claude = model.isEmpty ? "Claude" : "Claude (\(ClaudeModelOption.displayName(for: model)))"
+        return "\(claude) is \(mode == .structure ? "structuring" : "tidying")…"
+    }
+
+    static func rerunFailed(mode: ModeID, _ error: CleanError) -> String {
+        "Not re-run as \(mode.displayName). " + rerunFailure(error)
+    }
+
+    private static func rerunFailure(_ error: CleanError) -> String {
+        switch error {
+        case .claudeNotFound: return "Claude Code wasn't found. Install it in Settings → Claude."
+        case .notConnected: return "Claude isn't connected. Connect it in Settings → Claude."
+        case .authFailed: return "Claude didn't accept the token. Reconnect in Settings → Claude."
+        case .timedOut(let after):
+            return "Claude timed out after \(Int(after.rounded())) s. The limit is in Settings → Modes."
+        case .processFailed(let code, let message):
+            let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            return detail.isEmpty ? "Claude failed (exit code \(code))." : "Claude failed: \(detail)"
+        case .rejectedOutput(let reason): return "Claude's output was rejected: \(reason)."
+        }
+    }
+
+    static func rerunNothingToSend(mode: ModeID) -> String {
+        "Not re-run as \(mode.displayName). This recording has no transcript to send to Claude."
+    }
+
+    /// Claude answered, but record.json couldn't be read or written.
+    static func rerunNotSaved(mode: ModeID, detail: String) -> String {
+        "Re-run as \(mode.displayName), but the result couldn't be saved: \(detail)"
     }
 
     static func snippet(for recording: Recording) -> String {
