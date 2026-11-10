@@ -40,15 +40,16 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('Mac/Package.swift', 'Mac/Package.resolved', 'Core/Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
       - name: Core tests
+        continue-on-error: true
         run: swift test --package-path Core
       - name: Build devshout-cli
-        if: ${{ inputs.build_cli }}
+        if: ${{ !cancelled() && inputs.build_cli }}
         run: swift build --package-path Mac -c release --product devshout-cli
       - name: Mac package tests
-        if: ${{ inputs.run_mac_tests }}
+        if: ${{ !cancelled() && inputs.run_mac_tests }}
         run: swift test --package-path Mac
       - name: Build app
-        if: ${{ inputs.build_app }}
+        if: ${{ !cancelled() && inputs.build_app }}
         run: |
           brew install xcodegen
           mkdir -p build

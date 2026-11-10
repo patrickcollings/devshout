@@ -71,7 +71,7 @@ import Testing
         // Even if the record's date falls in another month, it is written next to its audio.
         dates.advance(40 * 86_400)
         try store.save(Recording(id: id, createdAt: dates.now()))
-        #expect(store.audioURL(for: id) == audioURL)
+        #expect(store.audioURL(for: id)?.resolvingSymlinksInPath() == audioURL.resolvingSymlinksInPath())
         #expect(FileManager.default.fileExists(atPath: audioURL.deletingLastPathComponent()
             .appendingPathComponent("record.json").path))
     }
@@ -169,7 +169,7 @@ import Testing
         #expect(saved.status == .recovered)
         #expect(saved.duration == 3)
         #expect(saved.errorMessage != nil)
-        #expect(store.audioURL(for: orphan) == orphanAudio)
+        #expect(store.audioURL(for: orphan)?.resolvingSymlinksInPath() == orphanAudio.resolvingSymlinksInPath())
         #expect(try store.load(live) == nil)
         #expect(try store.load(done)?.status == .completed)
         #expect(store.folder(for: empty) == nil)
