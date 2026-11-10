@@ -192,8 +192,8 @@ struct TranscriptionSettingsTab: View {
         }
         .formStyle(.grouped)
         .frame(width: SettingsLayout.width, height: 470)
-        .onAppear { microphone.startLevelMonitoring() }
-        .onDisappear { microphone.stopLevelMonitoring() }
+        .onAppear { microphone.startLevelMonitoring(for: .settings) }
+        .onDisappear { microphone.stopLevelMonitoring(for: .settings) }
     }
 }
 

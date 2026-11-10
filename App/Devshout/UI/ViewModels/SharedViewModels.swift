@@ -82,7 +82,9 @@ final class MicrophoneViewModel: ObservableObject {
 
     private var isSyncing = false
     /// How many views want the meter running; it runs while this is above zero and access is granted.
-    private var monitoringRequests = 0
+    /// Who can ask for the live level meter (which keeps the microphone open).
+    enum LevelMonitor: Hashable { case onboarding, settings }
+    private var monitoringOwners: Set<LevelMonitor> = []
     private var isMonitoring = false
 
     init(permission: MicPermission = .notDetermined, devices: [InputDeviceOption] = [],
@@ -104,20 +106,21 @@ final class MicrophoneViewModel: ObservableObject {
 
     func requestAccess() { actions.requestAccess() }
     func openPrivacySettings() { actions.openPrivacySettings() }
-    /// Balanced with `stopLevelMonitoring()`. Several views (onboarding, Settings) may ask at once; the action
-    /// runs once, and only while access is granted (it starts by itself when access arrives).
-    func startLevelMonitoring() {
-        monitoringRequests += 1
+    /// Onboarding and Settings may both ask; the action runs once, and only while access is granted (it starts by
+    /// itself when access arrives). Starting or stopping twice for the same owner is harmless, so a view callback
+    /// that fires twice (or not at all, when a window closes) can't leave the microphone open.
+    func startLevelMonitoring(for owner: LevelMonitor) {
+        monitoringOwners.insert(owner)
         updateMonitoring()
     }
 
-    func stopLevelMonitoring() {
-        monitoringRequests = max(0, monitoringRequests - 1)
+    func stopLevelMonitoring(for owner: LevelMonitor) {
+        monitoringOwners.remove(owner)
         updateMonitoring()
     }
 
     private func updateMonitoring() {
-        let shouldMonitor = monitoringRequests > 0 && permission == .granted
+        let shouldMonitor = !monitoringOwners.isEmpty && permission == .granted
         guard shouldMonitor != isMonitoring else { return }
         isMonitoring = shouldMonitor
         if shouldMonitor {

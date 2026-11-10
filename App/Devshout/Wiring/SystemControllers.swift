@@ -109,6 +109,8 @@ final class LevelMeterController {
     init(level: AudioLevelViewModel, scratch: URL) {
         self.level = level
         self.scratch = scratch
+        // A meter file outlives the app if it quits or crashes while the meter is showing: clear old ones.
+        try? FileManager.default.removeItem(at: scratch)
     }
 
     func setWanted(_ value: Bool) {

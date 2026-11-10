@@ -36,6 +36,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             other !== window && other.isVisible && other.alphaValue > 0 && other.styleMask.contains(.titled)
         }
         if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
+        // The Transcription tab's level meter keeps the microphone open: stop it whatever SwiftUI reports.
+        models.microphone.stopLevelMonitoring(for: .settings)
         // Drop the SwiftUI views once the window has gone, so their `onDisappear` runs (it stops the microphone
         // level meter) and the next `show()` starts afresh.
         DispatchQueue.main.async { [weak self] in

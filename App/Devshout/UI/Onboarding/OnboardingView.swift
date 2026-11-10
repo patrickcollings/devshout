@@ -38,7 +38,8 @@ struct OnboardingView: View {
                 .padding(.vertical, 14)
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .onAppear { model.windowDidAppear() }
+        // Appearing is reported by OnboardingWindowController.show(), which knows the window is really on screen;
+        // SwiftUI's onAppear can also fire for a window that has been closed, which left the level meter running.
         .onDisappear { model.windowDidDisappear() }
     }
 

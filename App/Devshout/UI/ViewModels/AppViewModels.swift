@@ -284,7 +284,7 @@ final class OnboardingViewModel: ObservableObject {
         case .microphone, .tryIt:
             if isMonitoringLevels {
                 isMonitoringLevels = false
-                microphone.stopLevelMonitoring()
+                microphone.stopLevelMonitoring(for: .onboarding)
             }
         default:
             break
@@ -295,7 +295,7 @@ final class OnboardingViewModel: ObservableObject {
         // MicrophoneViewModel waits for permission itself; this only keeps start/stop balanced.
         guard !isMonitoringLevels else { return }
         isMonitoringLevels = true
-        microphone.startLevelMonitoring()
+        microphone.startLevelMonitoring(for: .onboarding)
     }
 
     private func childrenChanged() {
