@@ -339,7 +339,7 @@ All flags above were checked against the current [CLI reference](https://code.cl
 **Pre-warm:** the process is spawned at recording start with stdin open and written to at stop. The spike measures how much of the start-up this hides (§9, Phase 0). If the CLI blocks on stdin before initialising, the fallback is to spawn on stop.
 
 **Result handling** (`ClaudeResultParser`, pure): exit 0 and `is_error == false` → use `result`, stripped of any stray `<transcript>` tags or code fences. A non-zero exit, `is_error`, a timeout (process killed), empty output, or a **sanity failure** → paste the raw text, and the overlay and history say why. The sanity checks:
-- Tidy: output word count is between 70% and 130% of the input's (it shouldn't summarise or answer).
+- Tidy: output word count is between 50% and 130% of the input's, not counting the input's fillers (it shouldn't summarise or answer); between 50% and 70% it must also still reach the end of the dictation (it shouldn't be cut off). See `TidyLengthCheck`.
 - Structure: `CoverageCheck` makes sure every glossary term, number, ticket ID and file path found in the raw text appears in the output. A miss **doesn't block the paste**, but it adds a warning ("may have dropped: AB-1234, 20%") to the overlay and history.
 
 ### 5.2 Prompts (first draft; tuned in the spike and editable in Settings → Modes → Advanced)
