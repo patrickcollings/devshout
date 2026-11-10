@@ -16,11 +16,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    func show() {
+    /// Opens the window, or brings it forward. `tab` switches to that tab; `nil` leaves an open window as it is.
+    func show(tab: SettingsTab? = nil) {
         let window = self.window ?? makeWindow()
         self.window = window
-        if window.contentViewController == nil {
-            window.contentViewController = NSHostingController(rootView: SettingsView(models: models))
+        if window.contentViewController == nil || tab != nil {
+            window.contentViewController = NSHostingController(
+                rootView: SettingsView(models: models, initialTab: tab ?? .general))
         }
         // An LSUIElement app's windows open behind the frontmost app unless it activates.
         NSApp.setActivationPolicy(.regular)

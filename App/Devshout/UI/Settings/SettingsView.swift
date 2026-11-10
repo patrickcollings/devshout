@@ -6,7 +6,12 @@ import SwiftUI
 
 struct SettingsView: View {
     let models: DevshoutViewModels
-    @State private var tab: SettingsTab = .general
+    @State private var tab: SettingsTab
+
+    init(models: DevshoutViewModels, initialTab: SettingsTab = .general) {
+        self.models = models
+        _tab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {

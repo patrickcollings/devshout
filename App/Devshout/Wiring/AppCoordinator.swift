@@ -155,6 +155,10 @@ final class AppCoordinator {
         if !defaults.bool(forKey: AppDefaultsKey.onboardingCompleted) {
             showOnboarding()
         }
+        // For checking a screen after a build: `open devshout.app --args -openSettingsTab history`.
+        if let name = defaults.string(forKey: AppDefaultsKey.openSettingsTab), let tab = SettingsTab(rawValue: name) {
+            openSettings(tab: tab)
+        }
     }
 
     // MARK: Windows
@@ -175,7 +179,7 @@ final class AppCoordinator {
         }
     }
 
-    func openSettings() {
+    func openSettings(tab: SettingsTab? = nil) {
         // Refresh what Settings shows, then open the window.
         if case .notFound = models.claude.install { claude.detect() }
         if case .installFailed = models.claude.install { claude.detect() }
@@ -187,7 +191,7 @@ final class AppCoordinator {
             models.general.sync { models.general.preferences.launchAtLogin = launch }
         }
         lastGeneral.launchAtLogin = launch
-        settingsWindow.show()
+        settingsWindow.show(tab: tab)
     }
 
     // MARK: Settings
