@@ -109,3 +109,14 @@ public struct SystemDateSource: DateSource {
     public init() {}
     public func now() -> Date { Date() }
 }
+
+/// Counts tokens the way an engine's tokenizer would (WhisperKit's tokenizer on macOS; an approximation in tests).
+public protocol TokenCounter: Sendable {
+    func count(_ text: String) -> Int
+}
+
+/// Rough stand-in: about four characters per token. For tests and for when no tokenizer is loaded.
+public struct ApproximateTokenCounter: TokenCounter {
+    public init() {}
+    public func count(_ text: String) -> Int { max(0, Int((Double(text.utf8.count) / 4).rounded(.up))) }
+}
