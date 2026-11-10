@@ -15,9 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// Double-clicking devshout.app while it's running opens Settings (there is no Dock icon to click).
+    /// Opening devshout.app while it's running brings back onboarding if that is open, otherwise opens Settings.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        AppCoordinator.shared.openSettings()
+        AppCoordinator.shared.handleReopen()
         return false
     }
 }

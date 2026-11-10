@@ -156,8 +156,19 @@ final class AppCoordinator {
     // MARK: Windows
 
     func showOnboarding() {
-        models.onboarding.restart()
+        // Already open (perhaps behind another window): bring it back where it was, not back to Welcome.
+        if !onboardingWindow.isVisible { models.onboarding.restart() }
         onboardingWindow.show()
+    }
+
+    /// devshout.app was opened again while running (Finder, Spotlight, the Dock icon): back to onboarding while
+    /// it is open, otherwise Settings.
+    func handleReopen() {
+        if onboardingWindow.isVisible {
+            onboardingWindow.show()
+        } else {
+            openSettings()
+        }
     }
 
     func openSettings() {
