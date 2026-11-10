@@ -109,7 +109,11 @@ public enum ClaudeResultParser {
     }
 
     /// Maps a run to the cleaned text (already passed through `cleanText`) or the reason to paste raw instead.
-    /// Timeouts are the caller's to report (it knows the limit it set).
+    ///
+    /// Timeouts are the caller's to report (it knows the limit it set), but a run that timed out can still succeed
+    /// here: when stdout already holds a complete, successful result, claude had answered and was only slow to exit.
+    /// Its exit code then says how the runner stopped it, not how the clean-up went, so it is ignored. A result cut
+    /// off part-way isn't valid JSON and fails as before.
     public static func interpret(_ run: ProcessResult) -> Result<String, CleanError> {
         let output = decode(run.stdout)
         let stderr = run.stderrString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -128,7 +132,7 @@ public enum ClaudeResultParser {
         }
 
         let resultText = output.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let failed = run.exitCode != 0 || output.isError == true
+        let failed = (run.exitCode != 0 && !run.timedOut) || output.isError == true
             || (output.subtype.map { $0.hasPrefix("error") } ?? false)
         if failed {
             var message = firstNonEmpty(resultText, stderr) ?? ""

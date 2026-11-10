@@ -149,7 +149,11 @@ public enum WavFormat {
     /// `recovering: true` is for devshout's own recordings after a crash: it ignores the data size in the header and
     /// takes everything to the end of the file, since the writer may have appended up to ~2 s since its last patch.
     /// Don't use it on other files, which may have chunks after the data.
-    public static func parseHeader(_ data: Data, recovering: Bool = false) throws -> WavHeader {
+    ///
+    /// `fileSize` is for when `data` is only the start of the file (the header is all that's needed for the
+    /// duration): the length of the whole file, which the data chunk is measured against. Nil means `data` is the
+    /// whole file.
+    public static func parseHeader(_ data: Data, recovering: Bool = false, fileSize: Int? = nil) throws -> WavHeader {
         try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> WavHeader in
             guard raw.count >= 12, fourCC(raw, 0) == "RIFF" else { throw WavError.notRIFF }
             guard fourCC(raw, 8) == "WAVE" else { throw WavError.notWAVE }
@@ -176,7 +180,7 @@ public enum WavFormat {
                     let encoding = try sampleEncoding(tag: format.tag, bits: format.bits)
                     guard format.channels > 0 else { throw WavError.invalidFormat("no channels") }
                     guard format.rate > 0 else { throw WavError.invalidFormat("sample rate is 0") }
-                    let available = raw.count - body
+                    let available = max(0, (fileSize ?? raw.count) - body)
                     let fromHeader = !recovering && declared != 0 && declared != 0xFFFF_FFFF && declared <= available
                     var byteCount = fromHeader ? declared : available
                     let frameBytes = encoding.bytesPerSample * format.channels

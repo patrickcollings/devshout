@@ -367,9 +367,11 @@ final class DictationController {
             } else {
                 pill.phase = .done(shownOutcome)
             }
+            // Text was pasted without part of the recording: say so now, not only in History.
+            if let missing = result.missingPartsNotice { pill.notice = missing }
             if let saveError = result.saveError { pill.notice = "Not saved to history: \(saveError)" }
             switch (usedRaw, shownOutcome) {
-            case (false, .pasted): panel.dismiss(after: 1.2)
+            case (false, .pasted) where result.missingPartsNotice == nil: panel.dismiss(after: 1.2)
             case (_, .failed): panel.dismiss(after: 4)
             default: panel.dismiss(after: 3)
             }

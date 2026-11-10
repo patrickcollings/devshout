@@ -98,6 +98,26 @@ struct FakeFileSystem: FileSystem {
     }
 }
 
+/// Runs processes for real and keeps each result, so a test can look at how long the *process* ran
+/// (`ProcessResult.elapsed`, measured on the runner's own thread) rather than time the whole call with a stopwatch.
+/// A stopwatch around an `await` also counts the wait for a free task thread, which on a loaded 2-core CI runner
+/// has been over 40 s.
+final class RecordingRunner: ProcessRunner, @unchecked Sendable {
+    private let inner: any ProcessRunner
+    private let lock = NSLock()
+    private var _results: [ProcessResult] = []
+
+    init(_ inner: any ProcessRunner) { self.inner = inner }
+
+    var results: [ProcessResult] { lock.withLock { _results } }
+
+    func run(_ request: ProcessRequest) async throws -> ProcessResult {
+        let result = try await inner.run(request)
+        lock.withLock { _results.append(result) }
+        return result
+    }
+}
+
 /// A ProcessRunner that answers from a closure and records every request.
 final class StubRunner: ProcessRunner, @unchecked Sendable {
     private let lock = NSLock()

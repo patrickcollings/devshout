@@ -24,38 +24,13 @@ public struct WAVInfo: Sendable, Hashable {
         return parse(header: head, fileSize: fileSize ?? head.count)
     }
 
-    /// Parses a header. `fileSize` is used when the data chunk's size is missing or larger than the file.
+    /// Parses a header (the start of the file is enough). `fileSize` is used when the data chunk's size is missing
+    /// or larger than the file. A size that is present and fits is trusted, so for a recording that was never closed
+    /// run `WavFileWriter.repairHeader(at:)` first. The parsing itself is `WavFormat.parseHeader`.
     public static func parse(header: Data, fileSize: Int) -> WAVInfo? {
-        let bytes = [UInt8](header)
-        func fourCC(_ at: Int) -> String { String(decoding: bytes[at..<at + 4], as: UTF8.self) }
-        guard bytes.count >= 12, fourCC(0) == "RIFF", fourCC(8) == "WAVE" else { return nil }
-
-        func u32(_ at: Int) -> Int {
-            Int(bytes[at]) | Int(bytes[at + 1]) << 8 | Int(bytes[at + 2]) << 16 | Int(bytes[at + 3]) << 24
-        }
-        func u16(_ at: Int) -> Int { Int(bytes[at]) | Int(bytes[at + 1]) << 8 }
-
-        var offset = 12
-        var sampleRate: Int?
-        var channels: Int?
-        var bits: Int?
-        while offset + 8 <= bytes.count {
-            let id = fourCC(offset)
-            let size = u32(offset + 4)
-            let body = offset + 8
-            if id == "fmt " {
-                guard body + 16 <= bytes.count else { return nil }
-                channels = u16(body + 2)
-                sampleRate = u32(body + 4)
-                bits = u16(body + 14)
-            } else if id == "data" {
-                guard let sampleRate, let channels, let bits else { return nil }
-                let available = max(0, fileSize - body)
-                let dataBytes = (size == 0 || size > available) ? available : size
-                return WAVInfo(sampleRate: sampleRate, channels: channels, bitsPerSample: bits, dataBytes: dataBytes)
-            }
-            offset = body + size + (size & 1)  // chunks are word-aligned
-        }
-        return nil
+        // Rebased, so a slice of a larger Data parses from its own first byte.
+        guard let parsed = try? WavFormat.parseHeader(Data(header), fileSize: fileSize) else { return nil }
+        return WAVInfo(sampleRate: parsed.sampleRate, channels: parsed.channels,
+                       bitsPerSample: parsed.encoding.bitsPerSample, dataBytes: parsed.dataByteCount)
     }
 }

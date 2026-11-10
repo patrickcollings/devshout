@@ -1,26 +1,89 @@
 import Foundation
 
-/// Tidy must edit, not summarise or answer: the output's word count has to stay within 70–130% of the input's.
+/// Tidy must edit, not summarise, cut short or answer. The check is on word counts, with the dictation's fillers
+/// taken out first, because Tidy is told to delete them.
+///
+/// What Tidy may remove (see `PromptBuilder.tidyInstructions`): filler words, false starts, accidental repetitions
+/// and the abandoned half of a self-correction. Someone thinking aloud does a lot of all four, so the output can be
+/// well under the old limit of 70% of the dictation's words without anything being lost; the old limit then threw
+/// the clean-up away and pasted the raw ramble. The limits now:
+///
+/// - **At least 70%** of the non-filler words (`comfortableRatio`): accepted on length alone, as before.
+/// - **50–70%** (`minimumRatio`): accepted only when the output still reaches the end of the dictation
+///   (`reachesTheEnd`). A reply that was cut off part-way lands in this band, and it stops in the middle.
+/// - **Under 50%**: rejected. Fillers and stammers are already discounted (they are counted exactly), so this half
+///   is what false starts and self-corrections alone may take. A self-correction costs the wrong version plus the
+///   words that retract it ("to Tuesday no I mean Wednesday": six words become two), but only for the phrase being
+///   corrected; restarting or correcting more than half of everything said is not something a tidy-up of real speech
+///   does, while a summary keeps far less than half. The 50% is a judgement, not a measurement: there is no corpus
+///   of real Tidy runs yet. If rambling dictations are still rejected, the rejection reason gives both counts.
+/// - **Over 130%** of all the words: rejected (it answered instead of tidying), as before.
 public enum TidyLengthCheck {
-    public static let minimumRatio = 0.7
+    /// Under this share of the dictation's non-filler words, the output is rejected.
+    public static let minimumRatio = 0.5
+    /// From this share up, the length is accepted without looking at how the output ends.
+    public static let comfortableRatio = 0.7
     public static let maximumRatio = 1.3
     /// Very short dictations swing a lot in percentage terms ("um, yes, OK" → "Yes, OK."), so a difference of this
     /// many words or fewer always passes.
     public static let shortInputSlack = 3
 
+    /// Sounds that are never content. "Like", "you know" and "so" are left out: they are often real words.
+    static let fillers: Set<String> = [
+        "um", "umm", "uhm", "uh", "uhh", "er", "err", "erm", "ah", "ahh", "eh", "hm", "hmm", "mm", "mmm", "mhm",
+    ]
+
     /// Nil when the output is acceptable, else the reason it was rejected.
     public static func failureReason(raw: String, output: String) -> String? {
         let input = wordCount(raw)
+        let spoken = contentWordCount(raw)
         let produced = wordCount(output)
-        if abs(input - produced) <= shortInputSlack { return nil }
-        let ratio = input == 0 ? Double.infinity : Double(produced) / Double(input)
+        if abs(input - produced) <= shortInputSlack || abs(spoken - produced) <= shortInputSlack { return nil }
+        if input == 0 || Double(produced) / Double(input) > maximumRatio {
+            return "Tidy output was much longer than the dictation (\(produced) words from \(input)), so it may have answered it instead of tidying it"
+        }
+        let ratio = spoken == 0 ? Double.infinity : Double(produced) / Double(spoken)
         if ratio < minimumRatio {
             return "Tidy output was much shorter than the dictation (\(produced) words from \(input)), so it may have summarised it"
         }
-        if ratio > maximumRatio {
-            return "Tidy output was much longer than the dictation (\(produced) words from \(input)), so it may have answered it instead of tidying it"
+        if ratio < comfortableRatio, !reachesTheEnd(raw: raw, output: output) {
+            return "Tidy output was shorter than the dictation (\(produced) words from \(input)) and stops before its end, so it may have been cut off"
         }
         return nil
+    }
+
+    /// The dictation's words without fillers and without immediate repeats of a word ("the the", "I I I"): the
+    /// words Tidy is expected to keep at most.
+    public static func contentWordCount(_ text: String) -> Int {
+        contentWords(text).count
+    }
+
+    /// Whether the output ends where the dictation ends: at least two of the dictation's last five distinctive words
+    /// (four letters or more, so not "the" or "to") are among the output's last `tailWindow` words. Two of five
+    /// leaves room for the glossary respelling a word, a number becoming digits, or the dictation ending in a
+    /// self-correction. A dictation with fewer than two such words can't be judged and passes.
+    static func reachesTheEnd(raw: String, output: String) -> Bool {
+        let distinctive = contentWords(raw).filter { $0.count >= 4 }.suffix(5)
+        guard distinctive.count >= 2 else { return true }
+        let tail = Set(words(output).suffix(tailWindow))
+        return distinctive.filter(tail.contains).count >= 2
+    }
+
+    static let tailWindow = 25
+
+    /// Lower-cased letters and digits of each word that has any.
+    private static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0.isWhitespace })
+            .map { String($0.lowercased().filter { $0.isLetter || $0.isNumber }) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func contentWords(_ text: String) -> [String] {
+        var kept: [String] = []
+        for word in words(text) where !fillers.contains(word) && word != kept.last {
+            kept.append(word)
+        }
+        return kept
     }
 
     /// Words containing at least one letter or digit (Markdown bullets and dashes don't count).

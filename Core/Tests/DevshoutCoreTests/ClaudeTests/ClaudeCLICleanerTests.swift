@@ -11,6 +11,7 @@ import Testing
         var root: URL
         var record: URL
         var claude: URL
+        var runner: RecordingRunner
     }
 
     func setup(mode: String, extra: [String: String] = [:],
@@ -25,15 +26,16 @@ import Testing
         let claude = try ClaudeTestSupport.fakeClaude(mode: mode, extraEnvironment: env, in: bin,
                                                       settingsDirectory: root.appendingPathComponent("config"))
         let installation = ClaudeInstallation(url: claude, version: ClaudeVersion(2, 1, 300))
+        let runner = RecordingRunner(FoundationProcessRunner(killGracePeriod: 0.5, outputDrainTimeout: 0.5))
         let cleaner = ClaudeCLICleaner(
             installation: { installed ? installation : nil },
             credential: { credential },
             configDirectory: root.appendingPathComponent("config"),
             workingDirectory: root.appendingPathComponent("cwd"),
-            runner: FoundationProcessRunner(killGracePeriod: 0.5, outputDrainTimeout: 0.5),
+            runner: runner,
             host: ClaudeHostEnvironment(home: root.path, user: "patrick", tmpDir: root.path),
             temporaryDirectory: root.appendingPathComponent("tmp"))
-        return Setup(cleaner: cleaner, root: root, record: record, claude: claude)
+        return Setup(cleaner: cleaner, root: root, record: record, claude: claude, runner: runner)
     }
 
     func mode(_ id: ModeID, timeout: TimeInterval? = nil) -> ModeConfig {
@@ -154,14 +156,23 @@ import Testing
         }
     }
 
+    /// The child was stopped at the limit rather than waited for. `elapsed` is the runner's own measurement, from
+    /// spawning the child to its exit, taken on the runner's thread: limit + SIGTERM (+ grace + SIGKILL) + draining
+    /// the pipes, about 2 s at most with this runner's settings. It doesn't include the wait for a task thread
+    /// before and after, which is what made a stopwatch around `clean` take 36-44 s on CI.
+    func expectStoppedAtTheLimit(_ s: Setup, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(s.runner.results.count == 1, sourceLocation: sourceLocation)
+        guard let run = s.runner.results.first else { return }
+        #expect(run.timedOut, sourceLocation: sourceLocation)
+        #expect(run.elapsed < 10, "the child ran for \(run.elapsed) s", sourceLocation: sourceLocation)
+    }
+
     @Test func hangTimesOut() async {
-        let s = try! setup(mode: "hang")
-        let start = Date()
+        let s = try! setup(mode: "hang")  // the child would take 600 s
         await expectCleanError({ $0 == .timedOut(after: 0.5) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.5), glossary: "")
         }
-        // Generous: other suites can keep the cooperative pool busy for a while. The child would take 600 s.
-        #expect(Date().timeIntervalSince(start) < 25)
+        expectStoppedAtTheLimit(s)
     }
 
     @Test func slowWithinTheLimitSucceeds() async throws {
@@ -173,11 +184,74 @@ import Testing
 
     @Test func slowPastTheLimitTimesOut() async {
         let s = try! setup(mode: "slow", extra: ["FAKE_CLAUDE_DELAY": "60"])
-        let start = Date()
         await expectCleanError({ $0 == .timedOut(after: 0.3) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.3), glossary: "")
         }
-        #expect(Date().timeIntervalSince(start) < 25)
+        expectStoppedAtTheLimit(s)
+    }
+
+    // MARK: A run that timed out after answering
+
+    /// A cleaner whose `claude` is a stub: the run "times out" with `stdout` already printed.
+    func timedOutCleaner(stdout: String, exitCode: Int32 = 143) throws -> ClaudeCLICleaner {
+        let root = try ClaudeTestSupport.temporaryDirectory("cleaner-stub")
+        let runner = StubRunner { _ in StubRunner.result(stdout: stdout, exitCode: exitCode, timedOut: true, elapsed: 20) }
+        return ClaudeCLICleaner(
+            installation: { ClaudeInstallation(url: URL(fileURLWithPath: "/usr/bin/true"), version: ClaudeVersion(2, 1, 300)) },
+            credential: { ClaudeTestSupport.credential },
+            configDirectory: root.appendingPathComponent("config"),
+            workingDirectory: root.appendingPathComponent("cwd"),
+            runner: runner,
+            host: ClaudeTestSupport.host,
+            temporaryDirectory: root.appendingPathComponent("tmp"))
+    }
+
+    func resultJSON(_ text: String, isError: Bool = false, subtype: String = "success") -> String {
+        let escaped = text.replacingOccurrences(of: "\"", with: "\\\"")
+        return #"{"type":"result","subtype":"\#(subtype)","is_error":\#(isError),"result":"\#(escaped)"}"# + "\n"
+    }
+
+    @Test func aTimedOutRunThatHadAlreadyAnsweredIsUsed() async throws {
+        // The runner stopped claude with SIGTERM (exit code 143) after the limit, but the result was on stdout.
+        let cleaner = try timedOutCleaner(stdout: resultJSON(transcript))
+        let result = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+        #expect(result.text == transcript)
+        #expect(result.elapsed == 20)
+        // SIGKILL (137) after ignoring SIGTERM is no different.
+        let killed = try timedOutCleaner(stdout: "warming up\n" + resultJSON(transcript), exitCode: 137)
+        #expect(try await killed.clean(transcript, mode: mode(.structure, timeout: 45), glossary: "").text == transcript)
+    }
+
+    @Test func aTimedOutRunWithoutACompleteResultStillTimesOut() async throws {
+        let whole = resultJSON(transcript)
+        let cases = [
+            "",                                             // nothing printed
+            String(whole.prefix(whole.count / 2)),          // cut off part-way through the result
+            "Thinking…\n",                                  // only noise
+            resultJSON("Claude AI usage limit reached.", isError: true),
+            resultJSON("", subtype: "error_during_execution"),
+            resultJSON(""),                                 // a "successful" result with no text
+        ]
+        for stdout in cases {
+            let cleaner = try timedOutCleaner(stdout: stdout)
+            await expectCleanError({ $0 == .timedOut(after: 20) }) {
+                _ = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+            }
+        }
+    }
+
+    @Test func aTimedOutAnswerStillHasToPassTheSanityChecks() async throws {
+        let cleaner = try timedOutCleaner(stdout: resultJSON("Sure."))
+        await expectCleanError({ if case .rejectedOutput = $0 { true } else { false } }) {
+            _ = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+        }
+    }
+
+    @Test func lingeringAfterTheAnswerIsNotATimeout() async throws {
+        // End to end: the fake prints its result and then stays running until the runner stops it.
+        let s = try setup(mode: "linger")
+        let result = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 2), glossary: "")
+        #expect(result.text == transcript)
     }
 
     @Test func noCredentialMeansNotConnected() async {
@@ -227,14 +301,15 @@ import Testing
         }
     }
 
-    @Test func cancellationStopsClaude() async throws {
+    // The child runs for 600 s unless cancelling stops it, so finishing at all (inside the time limit, which is far
+    // above any wait for a task thread) is the proof. No stopwatch, for the reason given at expectStoppedAtTheLimit.
+    @Test(.timeLimit(.minutes(3))) func cancellationStopsClaude() async throws {
         let s = try setup(mode: "hang")
         let cleaner = s.cleaner
         let config = mode(.tidy, timeout: 30)
         let raw = transcript
         let task = Task { try await cleaner.clean(raw, mode: config, glossary: "") }
         try await Task.sleep(nanoseconds: 300_000_000)
-        let start = Date()
         task.cancel()
         do {
             _ = try await task.value
@@ -242,6 +317,5 @@ import Testing
         } catch let error as CleanError {
             #expect(error == .processFailed(exitCode: -1, message: "Cancelled"))
         }
-        #expect(Date().timeIntervalSince(start) < 25)
     }
 }

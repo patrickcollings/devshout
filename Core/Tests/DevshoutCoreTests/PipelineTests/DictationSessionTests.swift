@@ -72,18 +72,43 @@ import Testing
         #expect(saved.deliveredText == "Part 0 Part 1 Part 2")
     }
 
-    @Test func hangingCleanerIsAbandonedAfterTimeoutPlusGrace() async throws {
+    // The cleaner in this test never answers at all, so `stop()` returning is the proof that the session gave up on
+    // it. No stopwatch: when the suite runs in parallel on a 2-core CI runner, a test can wait tens of seconds for
+    // its turn on Swift's task threads, and a wall-clock bound measures that queue rather than the session. The
+    // time limit is only there so that a session which does wait for ever fails here instead of hanging the run.
+    @Test(.timeLimit(.minutes(3))) func hangingCleanerIsAbandonedAfterTimeoutPlusGrace() async throws {
         var settings = AppSettings()
         settings.modes[.tidy]?.timeout = 0.05
         let h = try SessionHarness(cleaner: .hanging(), settings: settings,
                                    options: DictationOptions(cleanGracePeriod: 0.05))
         defer { h.temp.remove() }
         try await h.session.start(mode: .tidy, targetApp: nil)
-        let started = Date()
         let result = try #require(await h.session.stop())
-        #expect(Date().timeIntervalSince(started) < 9) // the fake hangs for 10 s; generous for loaded CI machines
         #expect(result.cleanError == .timedOut(after: 0.05))
         #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
+    }
+
+    @Test func anAbsurdTimeoutDoesNotCrash() async throws {
+        for timeout in [1e30, Double.infinity, Double.greatestFiniteMagnitude] {
+            var settings = AppSettings()
+            settings.modes[.tidy]?.timeout = timeout
+            let h = try SessionHarness(settings: settings, options: DictationOptions(cleanGracePeriod: 1e30))
+            defer { h.temp.remove() }
+            try await h.session.start(mode: .tidy, targetApp: nil)
+            let result = try #require(await h.session.stop())
+            #expect(result.recording.status == .completed)
+            #expect(h.cleaner.calls.get().first?.mode.timeout == ModeConfig.maximumTimeout)
+            #expect(h.deliverer.delivered.get() == ["Cleaned: Part 0 Part 1 Part 2"])
+        }
+    }
+
+    @Test func sleepNanosecondsNeverTraps() {
+        #expect(sleepNanoseconds(0.5) == 500_000_000)
+        #expect(sleepNanoseconds(0) == 0)
+        #expect(sleepNanoseconds(-3) == 0)
+        #expect(sleepNanoseconds(.nan) == 0)
+        #expect(sleepNanoseconds(.infinity) == 86_400_000_000_000)
+        #expect(sleepNanoseconds(1e30) == 86_400_000_000_000)
     }
 
     @Test func pasteRawNowStopsWaitingForClaude() async throws {
@@ -160,25 +185,211 @@ import Testing
         #expect(await h.session.stop() == nil)
     }
 
-    @Test func engineFailureFailsButSavesTextAndAudio() async throws {
+    @Test func aChunkThatFailsOnceIsRetried() async throws {
+        let h = try SessionHarness(engine: FakeEngine(script: [1: [.fail]]))
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(h.engine.calledIndices == [0, 1, 1, 2])
+        #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
+        #expect(result.missingPartsNotice == nil)
+        let saved = try #require(try h.history.load(id))
+        #expect(saved.status == .completed)
+        #expect(saved.errorMessage == nil)
+        // The retry gets the same context as the first try.
+        #expect(h.engine.calls.get().map(\.context.previousText) == [nil, "part 0", "part 0", "part 1"])
+    }
+
+    @Test func aChunkThatKeepsFailingIsLeftOutAndTheRestDelivered() async throws {
         let h = try SessionHarness(engine: FakeEngine(failAtIndex: 1))
         defer { h.temp.remove() }
         let id = try await h.session.start(mode: .tidy, targetApp: nil)
         let result = try #require(await h.session.stop())
+        let states = await SessionHarness.collect(h.session.states)
 
-        guard case .failed(let stage, let message) = result.state else {
-            Issue.record("expected failed, got \(result.state)")
-            return
-        }
-        #expect(stage == .transcribing)
-        #expect(message.contains("engine exploded"))
+        // Tried twice, then the dictation carries on without it.
+        #expect(h.engine.calledIndices == [0, 1, 1, 2])
+        #expect(h.stitchedIndices.get() == [[0, 2]])
+        #expect(h.cleaner.calls.get().map(\.raw) == ["Part 0 Part 2"])
+        #expect(h.deliverer.delivered.get() == ["Cleaned: Part 0 Part 2"])
+        #expect(result.state == .finished(outcome: .pasted(appName: "Slack"), usedRaw: false, reason: nil, authFailed: false))
+        #expect(result.missingPartsNotice == "Part 2 of 3 is missing: see History")
+        #expect(states.contains(.transcribing(done: 2, total: 3)))
+        #expect(states.contains(.transcribing(done: 3, total: 3)))
+        // The chunk after the gap is given the last text that was transcribed.
+        #expect(h.engine.calls.get().last?.context.previousText == "part 0")
+
+        // History says what is missing, where in the recording, and why.
+        let saved = try #require(try h.history.load(id))
+        #expect(saved.status == .completed)
+        #expect(saved.rawText == "part 0 part 2")
+        #expect(saved.deliveredText == "Cleaned: Part 0 Part 2")
+        #expect(saved.errorMessage == "Part 2 of 3 (0:14 to 0:29) couldn't be transcribed and is missing from the "
+            + "text: engine exploded. The audio was kept.")
+        #expect(h.history.audioURL(for: id) != nil)
+    }
+
+    @Test func severalLostChunksAreAllListed() async throws {
+        let h = try SessionHarness(engine: FakeEngine(script: [0: [.fail, .fail], 3: [.fail, .fail]]),
+                                   chunkOrder: [0, 1, 2, 3, 4])
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(h.deliverer.delivered.get() == ["Part 1 Part 2 Part 4"])
+        #expect(result.missingPartsNotice == "2 of 5 parts are missing: see History")
+        #expect(try h.history.load(id)?.errorMessage == "2 of 5 parts couldn't be transcribed and are missing from "
+            + "the text: part 1 (0:00 to 0:14): engine exploded; part 4 (0:43 to 0:58): engine exploded. "
+            + "The audio was kept.")
+    }
+
+    @Test func aLostChunkAndARecorderErrorAreBothRecorded() async throws {
+        let h = try SessionHarness(recorder: FakeRecorder(stopError: FakeError(message: "device vanished")),
+                                   engine: FakeEngine(failAtIndex: 2))
+        defer { h.temp.remove() }
+        try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(h.deliverer.delivered.get() == ["Part 0 Part 1"])
+        #expect(result.recording.errorMessage == "Part 3 of 3 (0:29 to 0:43) couldn't be transcribed and is missing "
+            + "from the text: engine exploded. The audio was kept. The recorder reported: device vanished")
+    }
+
+    @Test func everyChunkFailingFailsTheDictation() async throws {
+        let h = try SessionHarness(engine: FakeEngine(script: [0: [.fail, .fail], 1: [.fail, .fail], 2: [.fail, .fail]]))
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .tidy, targetApp: nil)
+        let result = try #require(await h.session.stop())
+
+        #expect(result.state == .failed(stage: .transcribing,
+                                        message: "Couldn't transcribe any of the recording's 3 parts: engine exploded"))
+        #expect(h.engine.calledIndices == [0, 0, 1, 1, 2, 2])
         #expect(h.deliverer.delivered.get().isEmpty)
         #expect(h.cleaner.calls.get().isEmpty)
         let saved = try #require(try h.history.load(id))
         #expect(saved.status == .failed)
-        #expect(saved.rawText == "part 0")
-        #expect(saved.errorMessage == message)
+        #expect(saved.rawText == nil)
+        #expect(saved.errorMessage == "Couldn't transcribe any of the recording's 3 parts: engine exploded")
         #expect(h.history.audioURL(for: id) != nil)
+    }
+
+    @Test func aSingleChunkFailingFailsTheDictation() async throws {
+        let h = try SessionHarness(engine: FakeEngine(failAtIndex: 0), chunkOrder: [0])
+        defer { h.temp.remove() }
+        try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(result.state == .failed(stage: .transcribing, message: "Couldn't transcribe the recording: engine exploded"))
+    }
+
+    @Test func onlySilenceLeftAfterALostChunkIsAFailureNotNoSpeech() async throws {
+        // The chunks that worked had nothing in them, so the lost one was the dictation.
+        let h = try SessionHarness(engine: FakeEngine(script: [0: [.empty], 1: [.fail, .fail], 2: [.empty]]))
+        defer { h.temp.remove() }
+        try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(result.state == .failed(stage: .transcribing,
+                                        message: "Couldn't transcribe any of the recording's 3 parts: engine exploded"))
+        #expect(h.deliverer.delivered.get().isEmpty)
+    }
+
+    // MARK: Time limits (the fakes hang for ever; the limits here are 50 ms)
+
+    let quickLimits = DictationOptions(minimumChunkTimeout: 0.05, chunkTimeoutPerAudioSecond: 0,
+                                       minimumPlanningTimeout: 0.05, planningTimeoutPerAudioSecond: 0)
+
+    @Test func aChunkThatHangsOnceIsRetried() async throws {
+        let h = try SessionHarness(engine: FakeEngine(script: [1: [.hang]]), options: quickLimits)
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(h.engine.calledIndices == [0, 1, 1, 2])
+        #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
+        #expect(result.missingPartsNotice == nil)
+        #expect(try h.history.load(id)?.errorMessage == nil)
+    }
+
+    @Test func aStuckEngineEndsTheDictationWithWhatItHas() async throws {
+        // Chunk 2 of 4 never answers, twice. The session stops waiting, doesn't try the rest and delivers chunk 1.
+        let h = try SessionHarness(engine: FakeEngine(script: [1: [.hang, .hang]]), options: quickLimits,
+                                   chunkOrder: [0, 1, 2, 3])
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .tidy, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        let states = await SessionHarness.collect(h.session.states)
+
+        #expect(h.engine.calledIndices == [0, 1, 1])
+        #expect(h.deliverer.delivered.get() == ["Cleaned: Part 0"])
+        #expect(result.recording.status == .completed)
+        #expect(result.missingPartsNotice == "3 of 4 parts are missing: see History")
+        #expect(states.last == result.state)
+        #expect(states.contains(.transcribing(done: 4, total: 4)))
+        #expect(try h.history.load(id)?.errorMessage == "3 of 4 parts couldn't be transcribed and are missing from "
+            + "the text: part 2 (0:14 to 0:29): the engine didn't answer within 0.1 s; "
+            + "part 3 (0:29 to 0:43): not tried, because the engine had stopped answering; "
+            + "part 4 (0:43 to 0:58): not tried, because the engine had stopped answering. The audio was kept.")
+    }
+
+    @Test func anEngineStuckFromTheStartFailsTheDictation() async throws {
+        let h = try SessionHarness(engine: FakeEngine(script: [0: [.hang, .hang]]), options: quickLimits)
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(result.state == .failed(
+            stage: .transcribing,
+            message: "Couldn't transcribe any of the recording's 3 parts: the engine didn't answer within 0.1 s"))
+        #expect(h.engine.calledIndices == [0, 0])
+        #expect(try h.history.load(id)?.status == .failed)
+        #expect(h.history.audioURL(for: id) != nil)
+    }
+
+    @Test func aFailureThenATimeoutIsNotAStuckEngine() async throws {
+        // Only two timeouts running mean "stuck". Here the chunk is lost but the next ones are still tried.
+        let h = try SessionHarness(engine: FakeEngine(script: [0: [.fail, .hang]]), options: quickLimits)
+        defer { h.temp.remove() }
+        try await h.session.start(mode: .raw, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(h.engine.calledIndices == [0, 0, 1, 2])
+        #expect(h.deliverer.delivered.get() == ["Part 1 Part 2"])
+        #expect(result.missingPartsNotice == "Part 1 of 3 is missing: see History")
+    }
+
+    @Test func chunkPlanningThatHangsFailsTheDictation() async throws {
+        let h = try SessionHarness(options: quickLimits, planHangs: true)
+        defer { h.temp.remove() }
+        let id = try await h.session.start(mode: .tidy, targetApp: nil)
+        let result = try #require(await h.session.stop())
+        #expect(result.state == .failed(
+            stage: .transcribing,
+            message: "Couldn't split the audio: finding the speech in it took longer than 0.1 s, so devshout stopped waiting."))
+        #expect(h.engine.calledIndices.isEmpty)
+        #expect(try h.history.load(id)?.status == .failed)
+        #expect(h.history.audioURL(for: id) != nil)
+    }
+
+    @Test func timeLimitsScaleWithTheAudio() {
+        let options = DictationOptions()
+        // A full Whisper chunk and a full Parakeet chunk get four times their length; short ones get the floor.
+        #expect(options.chunkTimeout(forAudio: 28) == 112)
+        #expect(options.chunkTimeout(forAudio: 14.5) == 58)
+        #expect(options.chunkTimeout(forAudio: 2) == 30)
+        #expect(options.chunkTimeout(forAudio: -1) == 30)
+        // Planning: as long as the recording, at least 30 s.
+        #expect(options.planningTimeout(forAudio: 10) == 30)
+        #expect(options.planningTimeout(forAudio: 300) == 300)
+        // Switched off.
+        let none = DictationOptions(minimumChunkTimeout: 0, chunkTimeoutPerAudioSecond: 0,
+                                    minimumPlanningTimeout: -1, planningTimeoutPerAudioSecond: 0)
+        #expect(none.chunkTimeout(forAudio: 28) == 0)
+        #expect(none.planningTimeout(forAudio: 300) == 0)
+        #expect(DictationOptions(minimumChunkTimeout: .nan).chunkTimeout(forAudio: 0) == 0)
+        #expect(DictationSession.seconds(30) == "30 s")
+        #expect(DictationSession.seconds(0.05) == "0.1 s")
+        #expect(DictationSession.seconds(112.4) == "112.4 s")
+    }
+
+    @Test func skippedPartsAreDescribed() {
+        #expect(SkippedPart.clock(0) == "0:00")
+        #expect(SkippedPart.clock(16_000 * 9 + 15_999) == "0:09")
+        #expect(SkippedPart.clock(16_000 * 754) == "12:34")
+        #expect(SkippedPart.summary([], of: 4) == nil)
     }
 
     @Test func chunkPlanningFailureIsSaved() async throws {
