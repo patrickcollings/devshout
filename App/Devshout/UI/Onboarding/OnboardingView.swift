@@ -17,7 +17,7 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnboardingStepIndicator(steps: model.steps, current: model.step) { model.go(to: $0) }
+            OnboardingStepIndicator(steps: model.steps, current: model.step, isDone: model.isDone) { model.go(to: $0) }
                 .padding(.top, 18)
                 .padding(.horizontal, 24)
 
@@ -61,6 +61,9 @@ struct OnboardingView: View {
 struct OnboardingStepIndicator: View {
     let steps: [OnboardingStep]
     let current: OnboardingStep
+    /// Whether the step's job is already done (permission granted, model ready, Claude connected), wherever
+    /// the user is in the flow: reopening onboarding shows at a glance what is left.
+    let isDone: (OnboardingStep) -> Bool
     let select: (OnboardingStep) -> Void
 
     var body: some View {
@@ -74,7 +77,7 @@ struct OnboardingStepIndicator: View {
                             Circle()
                                 .fill(fill(for: step))
                                 .frame(width: 20, height: 20)
-                            if step < current {
+                            if isDone(step) {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.white)
@@ -93,7 +96,8 @@ struct OnboardingStepIndicator: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Step \(step.rawValue + 1) of \(steps.count): \(step.title)")
+                .accessibilityLabel("Step \(step.rawValue + 1) of \(steps.count): \(step.title)"
+                                    + (isDone(step) ? ", done" : ""))
                 .accessibilityAddTraits(step == current ? .isSelected : [])
             }
         }
@@ -101,7 +105,7 @@ struct OnboardingStepIndicator: View {
 
     private func fill(for step: OnboardingStep) -> Color {
         if step == current { return .accentColor }
-        if step < current { return .accentColor.opacity(0.55) }
+        if isDone(step) { return .green.opacity(0.75) }
         return Color.primary.opacity(0.1)
     }
 }

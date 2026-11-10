@@ -175,9 +175,25 @@ final class OnboardingViewModel: ObservableObject {
         onFinish()
     }
 
-    /// Restart from the beginning (Settings → General → Reopen onboarding, menu → Set Up devshout…).
+    /// Reopen (Settings → General → Reopen onboarding, menu → Set Up devshout…): at the first set-up step that
+    /// still needs doing, or at Welcome when nothing or everything is done.
     func restart() {
-        go(to: .welcome)
+        let setUp: [OnboardingStep] = [.microphone, .accessibility, .speechModel, .claude]
+        let remaining = setUp.filter { !isDone($0) }
+        let partlyDone = !remaining.isEmpty && remaining.count < setUp.count
+        go(to: partlyDone ? remaining[0] : .welcome)
+    }
+
+    /// Whether a step's job is already done, for the ticks in the step indicator. Set-up steps go by the real
+    /// state (so they are ticked when onboarding is reopened); the others once the user has moved past them.
+    func isDone(_ step: OnboardingStep) -> Bool {
+        switch step {
+        case .microphone: microphone.permission == .granted
+        case .accessibility: accessibility.isTrusted
+        case .speechModel: speech.selectedStatus.isReady
+        case .claude: claude.account.isConnected
+        case .welcome, .hotkeys, .tryIt: step < self.step
+        }
     }
 
     /// Called by `OnboardingView` when its window appears: runs the current step's hooks again.
