@@ -180,7 +180,13 @@ final class SpeechEngineViewModel: ObservableObject {
         didSet { if !isSyncing, selectedEngine != oldValue { actions.selectEngine(selectedEngine) } }
     }
     @Published var statuses: [EngineID: SpeechModelStatus]
+    /// When each engine began loading, while it is loading: lets the UI show how long it has taken and tell the
+    /// one-off optimisation (minutes) from a normal load (seconds).
+    @Published var preparingSince: [EngineID: Date] = [:]
     var actions: Actions
+
+    /// A load still running after this long is taken to be Core ML's one-off optimisation for this Mac.
+    static let slowLoad: TimeInterval = 15
 
     private var isSyncing = false
 
@@ -199,6 +205,17 @@ final class SpeechEngineViewModel: ObservableObject {
 
     func status(for engine: EngineID) -> SpeechModelStatus { statuses[engine] ?? .notDownloaded }
     var selectedStatus: SpeechModelStatus { status(for: selectedEngine) }
+
+    /// The model is being optimised for this Mac (as opposed to simply loading), as far as can be told.
+    func isOptimising(_ engine: EngineID, now: Date = Date()) -> Bool {
+        switch status(for: engine) {
+        case .preparing(.compiling): return true
+        case .preparing:
+            guard let since = preparingSince[engine] else { return false }
+            return now.timeIntervalSince(since) > Self.slowLoad
+        default: return false
+        }
+    }
     func info(for engine: EngineID) -> SpeechEngineInfo { SpeechEngineInfo.info(for: engine) }
 
     /// Convenience for wiring: feed engine progress straight in.

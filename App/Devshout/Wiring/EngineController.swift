@@ -18,10 +18,6 @@ final class EngineController {
     private(set) var selected: EngineID
     private var engines: [EngineID: any TranscriptionEngine] = [:]
     private var prepareTasks: [EngineID: Task<Void, Never>] = [:]
-    /// When each engine's current prepare run began, to tell a slow first load from a normal one.
-    private var prepareStarted: [EngineID: Date] = [:]
-    /// A load still running after this long is taken to be the one-off optimisation.
-    private static let slowLoad: TimeInterval = 15
     private var pendingUnload: [EngineID] = []
     private var speedTrackers: [EngineID: SpeedTracker] = [:]
     /// The current prepare run per engine, so a cancelled run's late progress is ignored.
@@ -78,13 +74,10 @@ final class EngineController {
         case .downloading:
             let progress = status.fraction.map { " (\(UIFormat.percent($0)))" } ?? ""
             return ("Speech model still downloading\(progress)", "It carries on in the background. Try again when it's done.")
-        case .preparing(.compiling):
-            return ("Optimising the speech model", "This happens once after a download and can take a few minutes.")
         case .preparing:
-            let waited = prepareStarted[selected].map { Date().timeIntervalSince($0) } ?? 0
-            if waited > Self.slowLoad {
-                return ("Optimising the speech model",
-                        "A one-off step for this Mac that can take several minutes. Settings → Transcription shows when it's ready.")
+            if model.isOptimising(selected) {
+                return ("Getting the speech model ready",
+                        "A one-off step on this Mac that can take several minutes. Settings shows the progress.")
             }
             return ("Speech model is loading", "Try again in a few seconds.")
         case .ready:
@@ -122,6 +115,7 @@ final class EngineController {
         task.cancel()
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         model.statuses[id] = EngineFactory.isModelDownloaded(id, locations: locations)
             ? .ready(sizeOnDisk: nil) : .notDownloaded
@@ -136,6 +130,7 @@ final class EngineController {
         prepareTasks[id]?.cancel()
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         deleting.insert(id)
         let instance = instance(for: id)
@@ -194,7 +189,7 @@ final class EngineController {
         let instance = instance(for: id)
         let run = UUID()
         runs[id] = run
-        prepareStarted[id] = Date()
+        model.preparingSince[id] = Date()
         let wasDownloaded = EngineFactory.isModelDownloaded(id, locations: locations)
         model.statuses[id] = wasDownloaded
             ? .preparing(.loading)
@@ -242,6 +237,7 @@ final class EngineController {
     private func prepareFinished(_ id: EngineID, error: Error?) {
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         if let error {
             if error is CancellationError { return }

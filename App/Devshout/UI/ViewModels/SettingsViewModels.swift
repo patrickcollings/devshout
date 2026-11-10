@@ -338,3 +338,29 @@ final class PrivacyViewModel: ObservableObject {
     func showInFinder() { actions.showInFinder() }
     func deleteAllHistory() { actions.deleteAllHistory() }
 }
+
+// MARK: - History
+
+@MainActor
+final class HistoryViewModel: ObservableObject {
+    struct Actions {
+        /// Read the recordings from disk again.
+        var reload: @MainActor () -> Void = {}
+        /// Delete one recording (audio and text). The view asks for confirmation first.
+        var delete: @MainActor (UUID) -> Void = { _ in }
+        var showInFinder: @MainActor (UUID) -> Void = { _ in }
+    }
+
+    /// Newest first.
+    @Published var recordings: [Recording]
+    var actions: Actions
+
+    init(recordings: [Recording] = [], actions: Actions = Actions()) {
+        self.recordings = recordings
+        self.actions = actions
+    }
+
+    func reload() { actions.reload() }
+    func delete(_ id: UUID) { actions.delete(id) }
+    func showInFinder(_ id: UUID) { actions.showInFinder(id) }
+}

@@ -387,6 +387,7 @@ final class DevshoutViewModels {
     let apps: AppsSettingsViewModel
     let glossary: GlossaryViewModel
     let privacy: PrivacyViewModel
+    let history: HistoryViewModel
     let menuBar: MenuBarViewModel
     let onboarding: OnboardingViewModel
     let pill: RecordingPillViewModel
@@ -418,6 +419,7 @@ final class DevshoutViewModels {
         self.apps = apps ?? AppsSettingsViewModel()
         self.glossary = glossary ?? GlossaryViewModel()
         self.privacy = privacy ?? PrivacyViewModel()
+        self.history = HistoryViewModel()
         self.menuBar = MenuBarViewModel(claude: claude, speech: speech, microphone: microphone,
                                         accessibility: accessibility, hotkeys: hotkeys)
         self.onboarding = OnboardingViewModel(microphone: microphone, accessibility: accessibility, speech: speech,

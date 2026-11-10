@@ -8,6 +8,15 @@ struct SettingsView: View {
     let models: DevshoutViewModels
 
     var body: some View {
+        VStack(spacing: 0) {
+            StatusStrip(menuBar: models.menuBar, speech: models.speech)
+            Divider()
+            tabs
+        }
+        .frame(width: SettingsLayout.width)
+    }
+
+    private var tabs: some View {
         TabView {
             GeneralSettingsTab(model: models.general, hotkeys: models.hotkeys)
                 .tabItem { Label("General", systemImage: "gearshape") }
@@ -21,6 +30,8 @@ struct SettingsView: View {
                 .tabItem { Label("Claude", systemImage: "sparkles") }
             GlossarySettingsTab(model: models.glossary)
                 .tabItem { Label("Glossary", systemImage: "text.book.closed") }
+            HistorySettingsTab(model: models.history)
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             PrivacySettingsTab(model: models.privacy)
                 .tabItem { Label("Privacy", systemImage: "hand.raised") }
         }

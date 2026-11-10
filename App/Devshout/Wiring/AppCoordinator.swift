@@ -231,6 +231,7 @@ final class AppCoordinator {
         wireModes()
         wireApps()
         wirePrivacy()
+        wireHistory()
         wireHotkeys()
 
         // Menu bar.
@@ -400,6 +401,25 @@ final class AppCoordinator {
         )
     }
 
+    private func wireHistory() {
+        models.history.actions = HistoryViewModel.Actions(
+            reload: { [weak self] in self?.refreshStorage() },
+            delete: { [weak self] id in
+                guard let self else { return }
+                do {
+                    try self.history.delete(id)
+                } catch {
+                    NSLog("devshout: delete recording: \(ErrorText.describe(error))")
+                }
+                self.refreshStorage()
+            },
+            showInFinder: { [weak self] id in
+                guard let self, let folder = self.history.folder(for: id) else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([folder])
+            }
+        )
+    }
+
     private static func retention(from days: Int?) -> AudioRetention {
         guard let days, days > 0 else { return .forever }
         if days <= 7 { return .days7 }
@@ -407,16 +427,18 @@ final class AppCoordinator {
         return .days90
     }
 
-    /// Recording count and bytes on disk, for Settings → Privacy.
+    /// The recordings for Settings → History, and their count and bytes on disk for Settings → Privacy.
     func refreshStorage() {
         let history = history
         let root = paths.recordings
         let privacy = models.privacy
+        let historyModel = models.history
         Task {
-            let stats: (count: Int, bytes: Int64) = await Task.detached(priority: .utility) {
-                (history.list().count, ModelLocations.directorySize(root))
+            let stats: (recordings: [Recording], bytes: Int64) = await Task.detached(priority: .utility) {
+                (history.list(), ModelLocations.directorySize(root))
             }.value
-            if privacy.recordingCount != stats.count { privacy.recordingCount = stats.count }
+            if historyModel.recordings != stats.recordings { historyModel.recordings = stats.recordings }
+            if privacy.recordingCount != stats.recordings.count { privacy.recordingCount = stats.recordings.count }
             if privacy.storageUsed != stats.bytes { privacy.storageUsed = stats.bytes }
         }
     }

@@ -71,6 +71,9 @@ enum UIFormat {
 // MARK: - Speech model
 
 extension SpeechModelStatus {
+    /// What the long first load is, in plain words.
+    static let optimisingExplanation = "The first time a speech model is used on this Mac, macOS converts it to run on the chip's Neural Engine. It happens once per model (and again after a macOS update): about 10 minutes for Whisper, under a minute for Parakeet. You can't dictate until it finishes."
+
     /// One line for Settings and onboarding.
     var summary: String {
         switch self {
@@ -88,7 +91,7 @@ extension SpeechModelStatus {
             }
             return parts.joined(separator: " · ")
         case .preparing(let phase):
-            return phase == .compiling ? "Optimising for this Mac…" : "Loading…"
+            return phase == .compiling ? "Getting ready for this Mac…" : "Loading…"
         case .ready(let size):
             if let size { return "Ready · \(UIFormat.bytes(size))" }
             return "Ready"
