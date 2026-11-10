@@ -1,0 +1,74 @@
+# macOS build: MANUAL ONLY, to stay inside the personal free Actions minutes (macOS minutes count 10x).
+# Run it from the Actions tab or: gh workflow run macos.yml --ref <branch>
+name: macOS build
+on:
+  workflow_dispatch:
+    inputs:
+      build_app:
+        description: "Build the .app with xcodebuild"
+        type: boolean
+        default: true
+      build_cli:
+        description: "Build devshout-cli with SwiftPM"
+        type: boolean
+        default: true
+      run_mac_tests:
+        description: "Run swift test for the Mac package (if it has tests)"
+        type: boolean
+        default: false
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/org.swift.swiftpm
+            Mac/.build
+            build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Mac/Package.swift', 'Mac/Package.resolved', 'Core/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: Core tests
+        run: swift test --package-path Core
+      - name: Build devshout-cli
+        if: ${{ inputs.build_cli }}
+        run: swift build --package-path Mac -c release --product devshout-cli
+      - name: Mac package tests
+        if: ${{ inputs.run_mac_tests }}
+        run: swift test --package-path Mac
+      - name: Build app
+        if: ${{ inputs.build_app }}
+        run: |
+          brew install xcodegen
+          mkdir -p build
+          xcodegen generate
+          set -o pipefail
+          xcodebuild -project Devshout.xcodeproj -scheme Devshout -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build | tee build/xcodebuild.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release/devshout.app
+      - name: Package artefacts
+        if: ${{ always() }}
+        run: |
+          mkdir -p out
+          if [ -d build/Build/Products/Release/devshout.app ]; then ditto -c -k --keepParent build/Build/Products/Release/devshout.app out/devshout-app.zip; fi
+          if [ -f Mac/.build/release/devshout-cli ]; then cp Mac/.build/release/devshout-cli out/; fi
+          if [ -f build/xcodebuild.log ]; then cp build/xcodebuild.log out/; fi
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: devshout-${{ github.sha }}
+          path: out/
+          retention-days: 7

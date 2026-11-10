@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.swiftpm/
+build/
+DerivedData/
+*.xcodeproj/
+xcuserdata/
+Core/Package.resolved
+*.xcresult
+bench/recordings/

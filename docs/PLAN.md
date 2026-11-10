@@ -1,6 +1,6 @@
 # devshout: plan
 
-> Status: **draft for sign-off.** Nothing is built yet. Everything below "Open questions" is a proposal; the numbered decisions in §1 are settled and not reopened.
+> Status: **signed off with the changes in §0.** Nothing is built yet. Everything below "Open questions" is a proposal; the numbered decisions in §1 are settled and not reopened.
 > Written 2026-11-10. Versions and docs were checked on that date.
 
 devshout is a macOS menu bar dictation app. Press a hotkey and talk, often for five minutes of rambling instructions to a coding agent. You get back an accurate, cleaned-up transcript, pasted into whatever app has focus. Transcription runs locally and costs nothing. Clean-up runs on each user's own Claude subscription through the Claude Code CLI. What sets it apart from superwhisper is a **team glossary**, so Abatable's jargon (CORSIA, NDC, My Supply, procurement, proponent, people's names, AB-1234) comes out right.
@@ -22,6 +22,23 @@ devshout is a macOS menu bar dictation app. Press a hotkey and talk, often for f
 11. [Risks and mitigations](#11-risks-and-mitigations)
 12. [Open questions (with recommendations)](#12-open-questions-with-recommendations)
 13. [Appendix: Handy as a reference](#13-appendix-handy-as-a-reference)
+
+---
+
+## 0. Changes after Patrick's review (2026-11-10). These override anything below.
+
+1. **Claude sign-in uses `claude setup-token` (approach B).** The app runs `claude setup-token` in a pseudo-terminal, reads the printed token, stores it **only in this Mac's Keychain** and passes it to `claude -p` as `CLAUDE_CODE_OAUTH_TOKEN`. `CLAUDE_CONFIG_DIR` still points at an empty devshout folder, so the user's own hooks, plugins and CLAUDE.md never load. There is also a "paste a token" field, for when the in-app flow fails and the token was made in Terminal.
+   - **Expiry:** the token lasts one year and can't be refreshed silently (there is no refresh token). The app stores the date the token was created, warns from 30 days before expiry (menu bar badge and Settings), marks the token as needing reconnection the moment a run fails on authentication, and offers a one-click **Reconnect**, which re-runs the browser approval. Until then, Tidy and Structure paste the raw text.
+   - **No API-key option, ever.** Subscription only.
+2. **No accounts or user management.** It's a desktop app for one person, and nothing is stored in the cloud. "Connect" just means the one-time Claude approval above.
+3. **The repo stays private.** No releases or update checker for now. Patrick runs the app built by CI (as an artefact) or builds it locally in Xcode.
+   - **CI costs nothing:** the macOS workflow is **manual only** (`workflow_dispatch`) and is run sparingly at integration points. The Linux core tests run on PRs that touch `Core/`.
+   - Both come out of Patrick's personal free Actions minutes (the repo is owned by his personal account). His Actions budget should be $0, so runs stop rather than bill.
+4. **No team glossary sync.** Settings has a **Glossary editor**: one `glossary.md` you paste in and edit in the app. Patrick will supply the real content. The generator, git/URL sources and "suggest for team" are dropped for now. "Add correction" (v0.3) writes to the same file.
+5. **Designed for Patrick's MacBook Pro (M1 Pro) only.** macOS 14+, arm64.
+6. **British English only** in clean-up output and UI copy. Dictation is English only.
+7. **Layout change:** two local Swift packages instead of one. `Core/` is pure Foundation and builds and tests on Linux. `Mac/` holds the macOS code and the `devshout-cli` spike tool and depends on Core. `project.yml` (XcodeGen) builds the app from both. See `CLAUDE.md` for the current layout.
+8. **The first version Patrick tests = Phase 0 spike CLI + v0.1**, plus a minimal recording pill so there is visible feedback.
 
 ---
 

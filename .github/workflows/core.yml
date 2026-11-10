@@ -1,0 +1,21 @@
+# Linux tests for the pure-Swift core. Cheap (Linux minutes), runs on PRs that touch Core/.
+name: Core tests (Linux)
+on:
+  pull_request:
+    paths: ["Core/**", ".github/workflows/core.yml"]
+  push:
+    branches: [main]
+    paths: ["Core/**", ".github/workflows/core.yml"]
+  workflow_dispatch:
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test --package-path Core
