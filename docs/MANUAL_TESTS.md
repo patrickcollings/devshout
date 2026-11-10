@@ -41,6 +41,8 @@ Useful places:
       hint appears and "Show devshout in Finder" works
 - [ ] **Speech model:** pick Parakeet, Download: progress, size, speed and time left show; "Continue While It
       Downloads" works and the download carries on (watch the menu's status line)
+- [ ] ⌥Space while the model is still downloading → the pill says "Speech model still downloading (42%)" and nothing
+      records
 - [ ] **Claude**, not installed: "Install for me" shows the installer's log and ends with "Claude Code 2.x" found;
       "Open in Terminal" also works
 - [ ] **Claude**, installed: found (also when it's only in `~/.local/bin`, or only via Homebrew, launched from
@@ -60,8 +62,11 @@ Useful places:
 - [ ] **Hold to talk:** hold ⌥Space, talk, let go → pasted
 - [ ] Settings → General → Hotkey behaviour "Toggle only" and "Hold to talk only" behave as named
 - [ ] The pill: red dot, mode chip, waveform that follows your voice, timer; hover shows Stop and Cancel, and both work
-- [ ] After stopping: "Transcribing…", then "Tidying with Haiku…" with **Paste raw now**; pressing it pastes the raw
-      text straight away ("Pasted raw: You chose to paste the raw text")
+- [ ] After stopping: "Transcribing…", then "Tidying with Haiku…" with **Paste raw now ⏎**; clicking it, or pressing
+      Return, pastes the raw text straight away ("Pasted raw: You chose to paste the raw text")
+- [ ] Return works normally again in other apps once the pill has moved on from "Tidying…"
+- [ ] Menu → **Cancel Dictation** while it's still transcribing or tidying: the pill goes, nothing is pasted later,
+      and the recording's folder still has its audio
 - [ ] Done: "✓ Pasted into <app>", fades after about a second
 - [ ] **Esc** while recording cancels (cancel sound, pill disappears); the folder in `Recordings/` has `audio.wav`
       and a `record.json` with `"status" : "cancelled"`

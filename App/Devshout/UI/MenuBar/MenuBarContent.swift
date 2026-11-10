@@ -25,7 +25,7 @@ struct MenuBarContent: View {
     var body: some View {
         dictationButton
 
-        if model.isRecording {
+        if model.isRecording || model.isWorking {
             Button("Cancel Dictation") { model.cancelDictation() }
         }
 

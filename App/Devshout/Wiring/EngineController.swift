@@ -22,6 +22,8 @@ final class EngineController {
     private var speedTrackers: [EngineID: SpeedTracker] = [:]
     /// The current prepare run per engine, so a cancelled run's late progress is ignored.
     private var runs: [EngineID: UUID] = [:]
+    /// Engines whose model files are being removed.
+    private var deleting: Set<EngineID> = []
 
     init(selected: EngineID, locations: ModelLocations, model: SpeechEngineViewModel) {
         self.selected = selected
@@ -54,10 +56,28 @@ final class EngineController {
         (engine as? WhisperEngine)?.tokenCounter ?? ApproximateTokenCounter()
     }
 
-    /// Whether the selected model is downloaded, or on its way (a dictation can wait for it).
-    var selectedModelIsUsable: Bool {
+    /// Why the selected model can't be used for a dictation now, if it can't: a title and a hint for the pill.
+    /// Loading an already-downloaded model is fine (a dictation waits a few seconds for it); a download or the
+    /// one-off optimisation after it could take minutes, with nothing to cancel, so those refuse.
+    var selectedModelProblem: (title: String, detail: String)? {
+        if deleting.contains(selected) {
+            return ("Speech model is being deleted", "Download it again in Settings → Transcription.")
+        }
         let status = model.status(for: selected)
-        return status.isReady || status.isBusy
+        switch status {
+        case .failed(let message):
+            let sentence = message.hasSuffix(".") ? message : message + "."
+            return ("Speech model isn't working", "\(sentence) Try again in Settings → Transcription.")
+        case .notDownloaded:
+            return ("No speech model yet", "Download one in Settings → Transcription.")
+        case .downloading:
+            let progress = status.fraction.map { " (\(UIFormat.percent($0)))" } ?? ""
+            return ("Speech model still downloading\(progress)", "It carries on in the background. Try again when it's done.")
+        case .preparing(.compiling):
+            return ("Optimising the speech model", "This happens once after a download and can take a few minutes.")
+        default:
+            return nil
+        }
     }
 
     /// At launch: load the selected model if it's already on disk (no network needed).
@@ -99,9 +119,13 @@ final class EngineController {
     }
 
     func delete(_ id: EngineID) {
+        // Not while a dictation may be using it, and not twice at once.
+        guard !(id == selected && isDictationActive()), !deleting.contains(id) else { return }
         prepareTasks[id]?.cancel()
         prepareTasks[id] = nil
         runs[id] = nil
+        speedTrackers[id] = nil
+        deleting.insert(id)
         let instance = instance(for: id)
         let locations = locations
         model.statuses[id] = .preparing(.loading)
@@ -110,6 +134,7 @@ final class EngineController {
             let result: Result<Void, Error> = await Task.detached {
                 Result { try EngineFactory.deleteModel(id, locations: locations) }
             }.value
+            self.deleting.remove(id)
             switch result {
             case .success:
                 self.model.statuses[id] = .notDownloaded
@@ -139,13 +164,9 @@ final class EngineController {
     }
 
     private func unload(_ id: EngineID) {
-        prepareTasks[id]?.cancel()
-        prepareTasks[id] = nil
-        runs[id] = nil
-        if model.status(for: id).isBusy {
-            model.statuses[id] = EngineFactory.isModelDownloaded(id, locations: locations)
-                ? .ready(sizeOnDisk: nil) : .notDownloaded
-        }
+        // A download in progress carries on (switching the selection shouldn't throw it away); prepareFinished
+        // unloads the engine once it's done, because it is no longer the selected one.
+        if prepareTasks[id] != nil { return }
         if isDictationActive() {
             pendingUnload.append(id)
             return
@@ -157,7 +178,7 @@ final class EngineController {
     /// Download (if needed), compile and load. Progress reaches the view model on the main actor, in order.
     /// (The controllers live as long as the app, so tasks hold them strongly.)
     private func prepare(_ id: EngineID) {
-        guard prepareTasks[id] == nil else { return }
+        guard prepareTasks[id] == nil, !deleting.contains(id) else { return }
         let instance = instance(for: id)
         let run = UUID()
         runs[id] = run

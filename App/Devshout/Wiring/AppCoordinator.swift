@@ -42,6 +42,8 @@ final class AppCoordinator {
     private let onboardingWindow: OnboardingWindowController
 
     private var started = false
+    /// The General preferences as last applied (to tell which one the user just changed).
+    private var lastGeneral = GeneralPreferences()
     private var cancellables: Set<AnyCancellable> = []
 
     private init() {
@@ -162,6 +164,12 @@ final class AppCoordinator {
         if case .installFailed = models.claude.install { claude.detect() }
         devices.refresh(selectedUID: settings.inputDeviceUID)
         refreshStorage()
+        // Launch at login can be changed in System Settings → Login Items: show what is true now.
+        let launch = LaunchAtLogin.isEnabled
+        if models.general.preferences.launchAtLogin != launch {
+            models.general.sync { models.general.preferences.launchAtLogin = launch }
+        }
+        lastGeneral.launchAtLogin = launch
         NotificationCenter.default.post(name: .devshoutOpenSettings, object: nil)
     }
 
@@ -202,6 +210,7 @@ final class AppCoordinator {
             self.recorder.deviceUID = uid
             self.levelMeter.setDevice(uid)
         }
+        levelMeter.setDevice(settings.inputDeviceUID)
         models.microphone.actions.startLevelMonitoring = { [weak self] in self?.levelMeter.setWanted(true) }
         models.microphone.actions.stopLevelMonitoring = { [weak self] in self?.levelMeter.setWanted(false) }
 
@@ -245,13 +254,18 @@ final class AppCoordinator {
 
     private func wireGeneral() {
         let general = models.general
-        general.sync { general.preferences = Self.preferences(from: settings) }
+        lastGeneral = Self.preferences(from: settings)
+        general.sync { general.preferences = lastGeneral }
         general.onChange = { [weak self] preferences in self?.applyGeneral(preferences) }
         general.reopenOnboarding = { [weak self] in self?.showOnboarding() }
     }
 
     private func applyGeneral(_ preferences: GeneralPreferences) {
-        if preferences.launchAtLogin != LaunchAtLogin.isEnabled {
+        // Only touch the login item when that toggle itself changed: it may have been changed in System Settings
+        // since, and an unrelated change here mustn't undo that.
+        let launchToggled = preferences.launchAtLogin != lastGeneral.launchAtLogin
+        lastGeneral = preferences
+        if launchToggled, preferences.launchAtLogin != LaunchAtLogin.isEnabled {
             do {
                 try LaunchAtLogin.setEnabled(preferences.launchAtLogin)
                 if LaunchAtLogin.status == .requiresApproval { LaunchAtLogin.openSystemSettings() }
@@ -263,7 +277,10 @@ final class AppCoordinator {
             if actual != preferences.launchAtLogin {
                 let general = models.general
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated { general.sync { general.preferences.launchAtLogin = actual } }
+                    MainActor.assumeIsolated {
+                        general.sync { general.preferences.launchAtLogin = actual }
+                        AppCoordinator.shared.lastGeneral.launchAtLogin = actual
+                    }
                 }
             }
         }

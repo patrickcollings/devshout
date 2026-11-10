@@ -9,6 +9,7 @@ import AppKit
 import DevshoutCore
 import DevshoutMac
 import Foundation
+import KeyboardShortcuts
 
 @MainActor
 final class DictationController {
@@ -53,7 +54,14 @@ final class DictationController {
     private var session: DictationSession?
     private var token = UUID()
     private var startTask: Task<Void, Never>?
+    private var stopTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
+    /// Esc, the pill's Cancel or the menu's Cancel Dictation was used for the current dictation.
+    private var cancelRequested = false
+    /// Closed when a dictation is cancelled after recording stopped, so a late result is never pasted.
+    private var deliveryGate = LockedBox(true)
+    /// Return → "Paste raw now" while Claude is tidying (the pill's panel never takes key focus).
+    private var returnKeyTask: Task<Void, Never>?
 
     init(services: Services, pill: RecordingPillViewModel, menuBar: MenuBarViewModel) {
         self.services = services
@@ -78,6 +86,7 @@ final class DictationController {
 
     var isActive: Bool { phase != .idle }
     var isRecording: Bool { phase == .starting || phase == .recording }
+    var isFinishing: Bool { phase == .finishing }
 
     func startHotkeys() {
         hotkeys.start()
@@ -96,9 +105,13 @@ final class DictationController {
             hotkeys.recordingEnded()
             stop()
         } else {
+            // A latched start whatever the hotkey behaviour (hold-only would stop at the key-up otherwise).
+            let behaviour = hotkeys.behaviour
+            hotkeys.behaviour = .toggleOnly
             let now = ProcessInfo.processInfo.systemUptime
             hotkeys.handle(.dictate, .down, at: now)
             hotkeys.handle(.dictate, .up, at: now + 0.01)
+            hotkeys.behaviour = behaviour
         }
     }
 
@@ -153,9 +166,9 @@ final class DictationController {
                       detail: "Allow devshout in System Settings → Privacy & Security → Microphone.")
             return
         }
-        guard services.engines.selectedModelIsUsable else {
+        if let problem = services.engines.selectedModelProblem {
             hotkeys.recordingEnded()
-            showError("No speech model yet", detail: "Download one in Settings → Transcription.")
+            showError(problem.title, detail: problem.detail)
             return
         }
 
@@ -167,12 +180,15 @@ final class DictationController {
         let engine = services.engines.engine
         let vad = services.vad
         let glossary = services.glossary
+        let gate = LockedBox(true)
+        deliveryGate = gate
+        cancelRequested = false
         let maxChunk = engine.maxChunkDuration
         let dependencies = DictationDependencies(
             recorder: services.recorder,
             engine: engine,
             cleaner: services.claude.cleaner,
-            deliverer: services.deliverer,
+            deliverer: GatedDeliverer(inner: services.deliverer, isOpen: gate),
             history: services.history,
             planChunks: { samples in try await DictationController.planChunks(samples, vad: vad, maxChunkDuration: maxChunk) },
             stitch: { Stitcher.stitch($0) },
@@ -216,9 +232,12 @@ final class DictationController {
     }
 
     private func startFailed(_ error: Error) {
-        services.sounds.play(.cancel)
         let message = ErrorText.describe(error)
+        let wasCancelled = cancelRequested
         endDictation()
+        // Already cancelled (Esc while the microphone was still starting): nothing more to say.
+        guard !wasCancelled else { return }
+        services.sounds.play(.cancel)
         showError("Couldn't start recording", detail: message)
     }
 
@@ -235,7 +254,7 @@ final class DictationController {
         pill.phase = .transcribing(remaining: nil)
         services.levelMeter.setPaused(false)
         let started = startTask
-        Task {
+        stopTask = Task {
             // stop() before start() reached the session would be refused; let start finish first.
             await started?.value
             let result = await session.stop()
@@ -245,10 +264,23 @@ final class DictationController {
     }
 
     private func cancel() {
-        guard isRecording, let session else { return }
+        guard phase != .idle, let session, !cancelRequested else { return }
+        cancelRequested = true
+        services.sounds.play(.cancel)
+        menuBar.isRecording = false
+        panel.dismiss(after: 0)
+
+        if phase == .finishing {
+            // Recording already stopped and the engine or Claude is still working: let go of it now. The session
+            // finishes in the background (history keeps the audio and any text), but its result is never pasted.
+            deliveryGate.value = false
+            stopTask?.cancel()
+            endDictation()
+            return
+        }
+
         let token = token
         phase = .finishing
-        services.sounds.play(.cancel)
         let started = startTask
         Task {
             await started?.value
@@ -280,8 +312,25 @@ final class DictationController {
             if case .transcribing = pill.phase {} else { pill.phase = .transcribing(remaining: nil) }
         case .cleaning(let model):
             pill.phase = .cleaning(model: model)
+            setReturnKeyEnabled(true)
         case .delivering, .finished, .cancelled, .failed:
-            break
+            setReturnKeyEnabled(false)
+        }
+    }
+
+    /// While Claude is tidying, Return means "Paste raw now" (it is swallowed system-wide for those seconds).
+    private func setReturnKeyEnabled(_ enabled: Bool) {
+        if enabled {
+            guard returnKeyTask == nil else { return }
+            let events = KeyboardShortcuts.events(for: KeyboardShortcuts.Shortcut(.return))
+            returnKeyTask = Task {
+                for await event in events where event == .keyDown {
+                    self.pasteRawNow()
+                }
+            }
+        } else {
+            returnKeyTask?.cancel()
+            returnKeyTask = nil
         }
     }
 
@@ -294,6 +343,9 @@ final class DictationController {
         }
 
         if let error = result.cleanError { services.claude.handle(error) }
+        setReturnKeyEnabled(false)
+        noticeTask?.cancel()
+        pill.notice = nil
 
         switch result.state {
         case .finished(let outcome, let usedRaw, let reason, _):
@@ -302,7 +354,7 @@ final class DictationController {
             if tryIt.isActive() {
                 // The Try it box is devshout's own window, where the paste is skipped on purpose.
                 let raw = rec.transcript ?? ""
-                let cleaned = usedRaw ? nil : rec.deliveredText
+                let cleaned = usedRaw || rec.mode == .raw ? nil : rec.deliveredText
                 tryIt.deliver(raw, cleaned, rec.deliveredText ?? raw)
                 if case .copiedOnly = outcome { shownOutcome = .pasted(appName: "the Try it box") }
             }
@@ -363,6 +415,9 @@ final class DictationController {
         phase = .idle
         session = nil
         startTask = nil
+        stopTask = nil
+        cancelRequested = false
+        setReturnKeyEnabled(false)
         token = UUID()
         hotkeys.recordingEnded()
         menuBar.isRecording = false
@@ -395,20 +450,36 @@ final class DictationController {
 
     // MARK: Chunk planning (off the main actor)
 
-    /// Silero VAD over the whole recording, then ChunkPlanner (v0.1 transcribes after stop). If the VAD can't run
-    /// (its model couldn't be downloaded, say), every frame counts as speech, so the planner makes fixed-length
-    /// chunks with overlaps and nothing is lost.
+    /// Silero VAD over the whole recording, then ChunkPlanner (v0.1 transcribes after stop). If the VAD isn't
+    /// loaded (its model couldn't be downloaded yet, say) or fails, every frame counts as speech, so the planner
+    /// makes fixed-length chunks with overlaps and nothing is lost.
     nonisolated static func planChunks(_ samples: [Float], vad: SileroVAD,
                                        maxChunkDuration: TimeInterval) async throws -> [AudioChunk] {
         var probabilities: [Float] = []
-        do {
-            await vad.reset()
-            probabilities = try await vad.process(samples)
-            if let last = try await vad.processRemainder() { probabilities.append(last) }
-        } catch {
-            probabilities = []
+        if await vad.isReady {
+            do {
+                await vad.reset()
+                probabilities = try await vad.process(samples)
+                if let last = try await vad.processRemainder() { probabilities.append(last) }
+            } catch {
+                probabilities = []
+            }
+        } else {
+            // Don't make this dictation wait for a download: plan without it, and fetch the model for next time.
+            Task.detached(priority: .utility) { try? await vad.prepare() }
         }
         return ChunkPlanner.plan(samples: samples, probabilities: probabilities, frameSize: vad.frameSize,
                                  maxChunkDuration: maxChunkDuration)
+    }
+}
+
+/// Passes deliveries through until the dictation is cancelled; after that nothing touches the clipboard.
+struct GatedDeliverer: Deliverer {
+    let inner: any Deliverer
+    let isOpen: LockedBox<Bool>
+
+    func deliver(_ text: String) async -> DeliveryOutcome {
+        guard isOpen.value else { return .failed(reason: "Cancelled") }
+        return await inner.deliver(text)
     }
 }

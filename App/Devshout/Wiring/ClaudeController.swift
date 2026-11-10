@@ -15,6 +15,8 @@ import Foundation
 final class ClaudeController {
     let connection: ClaudeConnection
     let cleaner: ClaudeCLICleaner
+    /// The same clean-up, with whatever token is saved (not gated): Test Connection must work after a refusal.
+    private let testCleaner: ClaudeCLICleaner
     private let cache: ClaudeInstallationCache
     private let store: KeychainCredentialStore
     private let installer: ClaudeInstaller
@@ -51,6 +53,12 @@ final class ClaudeController {
                 guard gate.value else { return nil }
                 return try store.load()
             },
+            configDirectory: paths.claudeConfig,
+            workingDirectory: paths.claudeWorkingDirectory
+        )
+        testCleaner = ClaudeCLICleaner(
+            installation: { try await cache.installation() },
+            credential: { try store.load() },
             configDirectory: paths.claudeConfig,
             workingDirectory: paths.claudeWorkingDirectory
         )
@@ -156,8 +164,12 @@ final class ClaudeController {
         if connection.connect() == nil {
             // Claude Code isn't installed (or wasn't found): offer to install it.
             model.isInstallSheetPresented = true
+            render()
+            return
         }
-        render()
+        // The flow can fail synchronously (the pseudo-terminal didn't start): look at it now, not on the next turn.
+        observeCurrentFlow()
+        flowChanged()
     }
 
     private func cancelSignIn() {
@@ -192,13 +204,14 @@ final class ClaudeController {
         var config = ModeConfig.defaults[.tidy] ?? ModeConfig(id: .tidy, claudeModel: "haiku", timeout: 30)
         config.timeout = max(config.timeout, 30)
         config.customInstructions = nil
-        let cleaner = cleaner
+        let cleaner = testCleaner
         let started = Date()
         Task {
             do {
                 _ = try await cleaner.clean("so this is just a quick test of devshout to check that tidy works",
                                             mode: config, glossary: "")
                 self.model.test = .succeeded(elapsed: Date().timeIntervalSince(started), at: Date())
+                self.clearAuthFailure()
             } catch let error as CleanError {
                 self.model.test = .failed(message: ErrorText.describe(error))
                 self.handle(error)
@@ -206,6 +219,16 @@ final class ClaudeController {
                 self.model.test = .failed(message: ErrorText.describe(error))
             }
         }
+    }
+
+    /// The saved token just worked: forget an earlier refusal so Tidy and Structure use Claude again.
+    /// (ClaudeConnection keeps the refusal in UserDefaults under this key; it has no public way to clear it short
+    /// of saving a new token.)
+    private func clearAuthFailure() {
+        guard case .needsReconnect(.authFailed) = connection.state else { return }
+        defaults.removeObject(forKey: "claude.authFailure")
+        connection.recheckExpiry()
+        render()
     }
 
     /// Follow-up on a clean-up failure (from a dictation or the test).
@@ -223,14 +246,17 @@ final class ClaudeController {
     // MARK: Rendering
 
     private func connectionChanged() {
-        // Follow the current setup flow too (connect() makes a new one each time).
-        if connection.setupFlow !== observedFlow {
-            observedFlow = connection.setupFlow
-            flowCancellable = observedFlow?.objectWillChange
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in self?.flowChanged() }
-        }
+        observeCurrentFlow()
         render()
+    }
+
+    /// Follow the current setup flow too (connect() makes a new one each time).
+    private func observeCurrentFlow() {
+        guard connection.setupFlow !== observedFlow else { return }
+        observedFlow = connection.setupFlow
+        flowCancellable = observedFlow?.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.flowChanged() }
     }
 
     private func flowChanged() {
