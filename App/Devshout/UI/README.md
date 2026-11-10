@@ -12,12 +12,10 @@ The v0.1 SwiftUI screens (PLAN §7.1–§7.4 as amended by §0). Views are dumb:
    To set a user-editable value from outside without it calling back, wrap it: `models.speech.sync { … }`.
 3. Scenes:
    ```swift
-   Window("devshout", id: SettingsOpenerView.windowID) { SettingsOpenerView() }   // hidden; before Settings
    MenuBarExtra { MenuBarContent(model: models.menuBar) } label: { MenuBarLabel(model: models.menuBar) }
-   Window("Welcome to devshout", id: "onboarding") { OnboardingView(model: models.onboarding) }
-       .windowResizability(.contentSize)
-   Settings { SettingsView(models: models) }
    ```
+   Onboarding and Settings are AppKit windows (`OnboardingWindowController`, `SettingsWindowController`) hosting
+   `OnboardingView` and `SettingsView`: a menu bar app can't reliably open SwiftUI `Window`/`Settings` scenes.
 4. The overlay: `let panel = OverlayPanel(model: models.pill)`; `models.pill.begin(mode:)` + `panel.present()`
    when recording starts; set `models.pill.phase` as the pipeline moves; `panel.dismiss(after: 1.2)` when done.
    Feed `models.microphone.level.push(_:)` (0…1, ~25 Hz) during recording and while a meter is showing.

@@ -19,11 +19,8 @@ final class MenuBarViewModel: ObservableObject {
         var cancelDictation: @MainActor () -> Void = {}
         var setDefaultMode: @MainActor (ModeID) -> Void = { _ in }
         var openOnboarding: @MainActor () -> Void = {}
-        /// Open the Settings window. The default asks `SettingsOpenerView` to do it (see SettingsOpener.swift).
-        /// Wiring can wrap it to refresh state first (e.g. re-detect Claude Code).
-        var openSettings: @MainActor () -> Void = {
-            NotificationCenter.default.post(name: .devshoutOpenSettings, object: nil)
-        }
+        /// Open the Settings window (wiring refreshes what it shows first, e.g. re-detects Claude Code).
+        var openSettings: @MainActor () -> Void = {}
     }
 
     @Published var isRecording = false

@@ -40,6 +40,7 @@ final class AppCoordinator {
     /// Started early so `lastExternal` is known from launch.
     private let frontmost: FrontmostApp
     private let onboardingWindow: OnboardingWindowController
+    private let settingsWindow: SettingsWindowController
 
     private var started = false
     /// The General preferences as last applied (to tell which one the user just changed).
@@ -113,6 +114,7 @@ final class AppCoordinator {
         self.dictation = dictation
         self.frontmost = FrontmostApp.shared
         self.onboardingWindow = OnboardingWindowController(model: models.onboarding)
+        self.settingsWindow = SettingsWindowController(models: models)
 
         wire()
     }
@@ -159,7 +161,7 @@ final class AppCoordinator {
     }
 
     func openSettings() {
-        // Refresh what Settings shows, then ask SettingsOpenerView to open the window (see SettingsOpener.swift).
+        // Refresh what Settings shows, then open the window.
         if case .notFound = models.claude.install { claude.detect() }
         if case .installFailed = models.claude.install { claude.detect() }
         devices.refresh(selectedUID: settings.inputDeviceUID)
@@ -170,7 +172,7 @@ final class AppCoordinator {
             models.general.sync { models.general.preferences.launchAtLogin = launch }
         }
         lastGeneral.launchAtLogin = launch
-        NotificationCenter.default.post(name: .devshoutOpenSettings, object: nil)
+        settingsWindow.show()
     }
 
     // MARK: Settings

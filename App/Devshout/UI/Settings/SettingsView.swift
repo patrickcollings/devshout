@@ -1,9 +1,5 @@
-// The Settings scene content (PLAN §7.4 as amended by §0: no team glossary sync, no updates tab). In a `Settings`
-// scene a TabView with `.tabItem`s becomes the standard toolbar-tab preferences window. Use as:
-//
-//     Settings { SettingsView(models: models) }
-//
-// Unsure on macOS (not compiled here): the Settings window resizes to each tab's fixed frame (standard behaviour).
+// The Settings window's content (PLAN §7.4 as amended by §0: no team glossary sync, no updates tab), hosted by
+// `SettingsWindowController`. The window resizes to each tab's fixed frame.
 
 import DevshoutCore
 import SwiftUI
@@ -27,9 +23,6 @@ struct SettingsView: View {
                 .tabItem { Label("Glossary", systemImage: "text.book.closed") }
             PrivacySettingsTab(model: models.privacy)
                 .tabItem { Label("Privacy", systemImage: "hand.raised") }
-        }
-        .onDisappear {
-            NotificationCenter.default.post(name: .devshoutSettingsClosed, object: nil)
         }
     }
 }

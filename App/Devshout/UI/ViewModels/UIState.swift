@@ -39,13 +39,6 @@ enum MenuBarIconState: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-extension Notification.Name {
-    /// Ask `SettingsOpenerView` to open the Settings window (see SettingsOpener.swift).
-    static let devshoutOpenSettings = Notification.Name("com.patrickcollings.devshout.openSettings")
-    /// Posted by `SettingsView` when the Settings window closes.
-    static let devshoutSettingsClosed = Notification.Name("com.patrickcollings.devshout.settingsClosed")
-}
-
 /// How serious a status line is. Views map this to a colour and symbol.
 enum StatusTone: String, Hashable, Sendable {
     case neutral, positive, warning, critical
