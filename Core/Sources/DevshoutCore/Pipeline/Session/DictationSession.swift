@@ -303,7 +303,7 @@ public actor DictationSession {
             let limit = config.timeout + max(0, options.cleanGracePeriod)
             let timeout = config.timeout
             racers.append {
-                try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: sleepNanoseconds(limit))
                 return .failed(.timedOut(after: timeout))
             }
         }
@@ -329,7 +329,7 @@ public actor DictationSession {
     /// Waits for the sample stream to end after the recorder stopped (bounded, in case a recorder never finishes it).
     private func drainCollector() async {
         guard let collector else { return }
-        let nanos = UInt64(max(0, options.streamDrainTimeout) * 1_000_000_000)
+        let nanos = sleepNanoseconds(options.streamDrainTimeout)
         let racers: [@Sendable () async -> Bool] = [
             { await collector.value; return true },
             { try? await Task.sleep(nanoseconds: nanos); return false },
@@ -408,6 +408,13 @@ public actor DictationSession {
 public enum DictationSessionError: Error, Sendable, Hashable {
     /// `start` was called on a session that already started. Make a new session per dictation.
     case alreadyStarted
+}
+
+/// Seconds as nanoseconds for `Task.sleep`, for any `Double`: 0 for a negative number or NaN, and capped at a day
+/// (`UInt64(seconds * 1e9)` traps on a number that doesn't fit, which a hand-edited timeout can be).
+func sleepNanoseconds(_ seconds: TimeInterval) -> UInt64 {
+    guard seconds > 0 else { return 0 }  // false for NaN too
+    return UInt64(min(seconds, 86_400) * 1_000_000_000)
 }
 
 /// Runs the operations at once and returns the first result; the others are cancelled (and not awaited, so an

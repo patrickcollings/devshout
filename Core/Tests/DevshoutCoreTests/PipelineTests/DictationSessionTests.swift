@@ -86,6 +86,29 @@ import Testing
         #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
     }
 
+    @Test func anAbsurdTimeoutDoesNotCrash() async throws {
+        for timeout in [1e30, Double.infinity, Double.greatestFiniteMagnitude] {
+            var settings = AppSettings()
+            settings.modes[.tidy]?.timeout = timeout
+            let h = try SessionHarness(settings: settings, options: DictationOptions(cleanGracePeriod: 1e30))
+            defer { h.temp.remove() }
+            try await h.session.start(mode: .tidy, targetApp: nil)
+            let result = try #require(await h.session.stop())
+            #expect(result.recording.status == .completed)
+            #expect(h.cleaner.calls.get().first?.mode.timeout == ModeConfig.maximumTimeout)
+            #expect(h.deliverer.delivered.get() == ["Cleaned: Part 0 Part 1 Part 2"])
+        }
+    }
+
+    @Test func sleepNanosecondsNeverTraps() {
+        #expect(sleepNanoseconds(0.5) == 500_000_000)
+        #expect(sleepNanoseconds(0) == 0)
+        #expect(sleepNanoseconds(-3) == 0)
+        #expect(sleepNanoseconds(.nan) == 0)
+        #expect(sleepNanoseconds(.infinity) == 86_400_000_000_000)
+        #expect(sleepNanoseconds(1e30) == 86_400_000_000_000)
+    }
+
     @Test func pasteRawNowStopsWaitingForClaude() async throws {
         let h = try SessionHarness(cleaner: .hanging())
         defer { h.temp.remove() }

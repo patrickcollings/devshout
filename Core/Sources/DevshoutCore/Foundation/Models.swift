@@ -40,6 +40,16 @@ public struct ModeConfig: Codable, Sendable, Hashable {
         self.customInstructions = customInstructions
     }
 
+    /// The longest `timeout` that is honoured, in seconds. Settings → Modes offers up to 120 s; this only bounds a
+    /// hand-edited `settings.json`, where a huge number used to crash the app when it was turned into nanoseconds.
+    public static let maximumTimeout: TimeInterval = 600
+
+    /// `timeout` as it is used: 0 (no limit) for anything negative or not a number, and at most `maximumTimeout`.
+    public var effectiveTimeout: TimeInterval {
+        guard timeout > 0 else { return 0 }  // false for NaN too
+        return min(timeout, Self.maximumTimeout)
+    }
+
     public static let defaults: [ModeID: ModeConfig] = [
         .raw: ModeConfig(id: .raw, claudeModel: "", timeout: 0),
         .tidy: ModeConfig(id: .tidy, claudeModel: "haiku", timeout: 20),

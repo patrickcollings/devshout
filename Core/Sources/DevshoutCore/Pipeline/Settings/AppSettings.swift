@@ -106,9 +106,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     public static let defaults = AppSettings()
 
-    /// The config for a mode, falling back to the built-in default.
+    /// The config for a mode, falling back to the built-in default. Its timeout is always usable
+    /// (`ModeConfig.effectiveTimeout`), however the settings were made.
     public func config(for mode: ModeID) -> ModeConfig {
-        modes[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "", timeout: 0)
+        var config = modes[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "", timeout: 0)
+        config.timeout = config.effectiveTimeout
+        return config
     }
 
     /// Suggestions shown (but not applied) in Settings → Apps.
@@ -224,7 +227,8 @@ struct PartialModeConfig: Decodable {
     func merged(over base: ModeConfig) -> ModeConfig {
         var config = base
         if let claudeModel { config.claudeModel = claudeModel }
-        if let timeout, timeout.isFinite, timeout >= 0 { config.timeout = timeout }
+        // Clamped: a hand-edited file with a huge timeout used to crash the app at the first clean-up.
+        if let timeout, timeout.isFinite, timeout >= 0 { config.timeout = min(timeout, ModeConfig.maximumTimeout) }
         if hasCustomInstructions {
             let trimmed = customInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             config.customInstructions = trimmed.isEmpty ? nil : customInstructions

@@ -73,7 +73,9 @@ public struct ClaudeCLICleaner: TextCleaner {
         }
         defer { try? fileManager.removeItem(at: promptFile) }
 
-        let timeout = mode.timeout > 0 ? mode.timeout : nil
+        // Bounded, whatever the caller built the mode from (see `ModeConfig.maximumTimeout`).
+        let limit = mode.effectiveTimeout
+        let timeout = limit > 0 ? limit : nil
         let invocation = ClaudeInvocation(executable: found.url,
                                           model: mode.claudeModel,
                                           systemPrompt: .file(promptFile),
@@ -101,7 +103,7 @@ public struct ClaudeCLICleaner: TextCleaner {
             // runner keeps what was printed before it stopped the process. The answer is there, so use it.
             text = cleaned
         case .failure(let error):
-            if run.timedOut { throw CleanError.timedOut(after: mode.timeout) }
+            if run.timedOut { throw CleanError.timedOut(after: limit) }
             throw error
         }
 
