@@ -273,8 +273,8 @@ final class DictationController {
         if phase == .finishing {
             // Recording already stopped and the engine or Claude is still working: let go of it now. The session
             // finishes in the background (history keeps the audio and any text), but its result is never pasted.
+            // (Deliberately not cancelling stopTask: that would cut the transcription short and save it as failed.)
             deliveryGate.value = false
-            stopTask?.cancel()
             endDictation()
             return
         }
