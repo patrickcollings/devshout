@@ -63,6 +63,54 @@ public enum GlossaryEditor {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// What `applyingCorrection` did, so the UI can say it.
+    public enum CorrectionOutcome: Sendable, Hashable {
+        /// The mishearing was added to an entry that was already there (`term` as the glossary spells it).
+        case addedToExisting(term: String)
+        /// There was no entry for the term: one was added, with the mishearing when one was given.
+        case addedNewEntry(term: String, kind: CorrectionKind)
+        /// Nothing changed: the entry already lists the mishearing (or there was no mishearing to add to it).
+        case alreadyListed(term: String)
+        /// Nothing changed: the term was blank.
+        case nothingToAdd
+    }
+
+    public struct CorrectionResult: Sendable, Hashable {
+        /// The glossary text afterwards (the text passed in, untouched, when nothing changed).
+        public var markdown: String
+        public var outcome: CorrectionOutcome
+
+        public var changed: Bool {
+            switch outcome {
+            case .addedToExisting, .addedNewEntry: true
+            case .alreadyListed, .nothingToAdd: false
+            }
+        }
+    }
+
+    /// `addingCorrection`, plus what it did.
+    public static func applyingCorrection(heard: String?, term: String, kind: CorrectionKind = .term,
+                                          to markdown: String) -> CorrectionResult {
+        let cleaned = clean(term)
+        guard !cleaned.isEmpty else { return CorrectionResult(markdown: markdown, outcome: .nothingToAdd) }
+        let existing = existingTerm(matching: cleaned, in: markdown)
+        let edited = addingCorrection(heard: heard, term: cleaned, kind: kind, to: markdown)
+        if let existing {
+            return edited == markdown
+                ? CorrectionResult(markdown: markdown, outcome: .alreadyListed(term: existing))
+                : CorrectionResult(markdown: edited, outcome: .addedToExisting(term: existing))
+        }
+        return CorrectionResult(markdown: edited, outcome: .addedNewEntry(term: cleaned, kind: kind))
+    }
+
+    /// The glossary's own spelling of the entry a correction for `term` would be added to (matched as
+    /// `addingCorrection` matches: ignoring case, in any section), or nil when it would make a new entry.
+    public static func existingTerm(matching term: String, in markdown: String) -> String? {
+        let wanted = clean(term).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        return GlossaryParser.parse(markdown).allEntries.first { $0.entry.term.lowercased() == wanted }?.entry.term
+    }
+
     /// One line of input: no line breaks, no commas (they separate mishearings), no surrounding spaces.
     static func clean(_ s: String) -> String {
         s.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")

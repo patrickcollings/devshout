@@ -250,6 +250,17 @@ final class GlossaryViewModel: ObservableObject {
         errorMessage = nil
     }
 
+    /// Wiring: glossary.md was changed and saved from outside the editor ("Add correction…" in History) and now
+    /// holds `saved`. The editor shows it; when it has unsaved edits they are kept, with the same `edit` made to
+    /// them, and stay unsaved.
+    func savedElsewhere(_ saved: String, edit: (String) -> String) {
+        text = isDirty ? edit(text) : saved
+        savedText = saved
+        counts = parse(text)
+        lastSaved = Date()
+        errorMessage = nil
+    }
+
     func saveChanges() {
         do {
             try save(text)
@@ -359,6 +370,12 @@ final class HistoryViewModel: ObservableObject {
         /// `rerunFailed` or `rerunCancelled`.
         var rerun: @MainActor (UUID, ModeID) -> Void = { _, _ in }
         var cancelRerun: @MainActor (UUID) -> Void = { _ in }
+        /// Add `heard` to the glossary as a mishearing of `term` (on its entry, or on a new one of this kind) and
+        /// save glossary.md. Throws when the file can't be read or written.
+        var addCorrection: @MainActor (_ heard: String, _ term: String, _ kind: GlossaryEditor.CorrectionKind) throws
+            -> GlossaryEditor.CorrectionOutcome = { _, _, _ in .nothingToAdd }
+        /// The glossary's spelling of the entry a correction for this term would go on, if it has one.
+        var existingGlossaryTerm: @MainActor (String) -> String? = { _ in nil }
     }
 
     /// The modes a recording can be re-run in (the ones that use Claude).
@@ -380,6 +397,8 @@ final class HistoryViewModel: ObservableObject {
     @Published private(set) var playback: HistoryPlayback = .idle
     /// Re-runs in progress, and the last failure, per recording.
     @Published private(set) var reruns: [UUID: HistoryRerunState] = [:]
+    /// What the last "Add correction…" did.
+    @Published private(set) var correctionNotice: HistoryCorrectionNotice?
     var actions: Actions
 
     init(recordings: [Recording] = [], searchText: String = "", selection: UUID? = nil, actions: Actions = Actions()) {
@@ -437,6 +456,8 @@ final class HistoryViewModel: ObservableObject {
         case .playing(let id): if id != shown { stopPlayback() }
         case .unavailable(let id, _): if id != shown { playback = .idle }
         }
+        // Likewise what was said about a glossary correction made from another recording.
+        if let notice = correctionNotice, notice.recordingID != shown { correctionNotice = nil }
     }
 
     // Wiring → model.
@@ -496,5 +517,36 @@ final class HistoryViewModel: ObservableObject {
 
     func rerunCancelled(_ id: UUID) {
         reruns[id] = nil
+    }
+
+    // MARK: Glossary corrections
+
+    /// Whether the two fields of "Add correction…" make a correction: both filled in, and not the same.
+    func canAddCorrection(heard: String, term: String) -> Bool {
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !heard.isEmpty && !term.isEmpty && heard.lowercased() != term.lowercased()
+    }
+
+    /// The glossary's spelling of the entry the correction would go on, or nil when it would make a new one.
+    func existingGlossaryTerm(matching term: String) -> String? { actions.existingGlossaryTerm(term) }
+
+    /// Adds the correction to the glossary and says what happened in the pane of the recording it was made from.
+    func addCorrection(heard: String, term: String, kind: GlossaryEditor.CorrectionKind, from recordingID: UUID) {
+        guard canAddCorrection(heard: heard, term: term) else { return }
+        do {
+            let outcome = try actions.addCorrection(heard, term, kind)
+            correctionNotice = HistoryCorrectionNotice(
+                recordingID: recordingID, text: HistoryText.correction(outcome, heard: heard),
+                tone: outcome == .nothingToAdd ? .warning : .positive)
+        } catch {
+            correctionNotice = HistoryCorrectionNotice(
+                recordingID: recordingID, text: HistoryText.correctionNotSaved(error.localizedDescription),
+                tone: .critical)
+        }
+    }
+
+    func correctionNotice(for id: UUID) -> HistoryCorrectionNotice? {
+        correctionNotice?.recordingID == id ? correctionNotice : nil
     }
 }

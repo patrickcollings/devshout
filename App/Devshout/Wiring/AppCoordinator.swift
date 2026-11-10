@@ -430,7 +430,11 @@ final class AppCoordinator {
             play: { [weak actions] id in actions?.play(id) },
             stopPlayback: { [weak actions] in actions?.stopPlayback() },
             rerun: { [weak actions] id, mode in actions?.rerun(id, mode: mode) },
-            cancelRerun: { [weak actions] id in actions?.cancelRerun(id) }
+            cancelRerun: { [weak actions] id in actions?.cancelRerun(id) },
+            addCorrection: { [glossary] heard, term, kind in
+                try glossary.addCorrection(heard: heard, term: term, kind: kind)
+            },
+            existingGlossaryTerm: { [glossary] term in glossary.existingTerm(matching: term) }
         )
     }
 

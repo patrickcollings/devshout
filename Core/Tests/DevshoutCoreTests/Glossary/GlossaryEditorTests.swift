@@ -78,6 +78,46 @@ import Testing
         #expect(add(" core,\nsea ", "CORSIA", to: "") == "## Terms\n- **CORSIA**\n  - heard: core sea\n")
     }
 
+    @Test func saysWhenAMishearingWentOnAnExistingEntry() {
+        let text = "## Terms\n- **CORSIA** — scheme\n  - heard: core sea\n"
+        let result = GlossaryEditor.applyingCorrection(heard: "corsair", term: "corsia", to: text)
+        #expect(result.outcome == .addedToExisting(term: "CORSIA"))
+        #expect(result.markdown == "## Terms\n- **CORSIA** — scheme\n  - heard: core sea, corsair\n")
+        #expect(result.changed)
+    }
+
+    @Test func saysWhenANewEntryWasAdded() {
+        let text = "## Terms\n- **A**\n"
+        let result = GlossaryEditor.applyingCorrection(heard: "shiv on", term: " Siobhán ", kind: .person, to: text)
+        #expect(result.outcome == .addedNewEntry(term: "Siobhán", kind: .person))
+        #expect(result.markdown == "## Terms\n- **A**\n\n## People\n- **Siobhán**\n  - heard: shiv on\n")
+        #expect(result.changed)
+        // The same edit as addingCorrection.
+        #expect(result.markdown == add("shiv on", " Siobhán ", .person, to: text))
+    }
+
+    @Test func saysWhenNothingChanged() {
+        let text = "## Terms\r\n- **CORSIA**\r\n  - heard: Core Sea\r\n"
+        let listed = GlossaryEditor.applyingCorrection(heard: "core sea", term: "CORSIA", to: text)
+        #expect(listed.outcome == .alreadyListed(term: "CORSIA"))
+        #expect(listed.markdown == text)
+        #expect(!listed.changed)
+        #expect(GlossaryEditor.applyingCorrection(heard: nil, term: "corsia", to: text).outcome
+            == .alreadyListed(term: "CORSIA"))
+        let blank = GlossaryEditor.applyingCorrection(heard: "x", term: " , ", to: text)
+        #expect(blank.outcome == .nothingToAdd)
+        #expect(blank.markdown == text)
+    }
+
+    @Test func findsTheEntryACorrectionWouldGoOn() {
+        let text = "## Terms\n- **CORSIA**\n<!--\n- **Hidden**\n-->\n## People\n- !**Siobhán Murphy** — heard: shiv on\n"
+        #expect(GlossaryEditor.existingTerm(matching: " corsia ", in: text) == "CORSIA")
+        #expect(GlossaryEditor.existingTerm(matching: "siobhán murphy", in: text) == "Siobhán Murphy")
+        #expect(GlossaryEditor.existingTerm(matching: "hidden", in: text) == nil)   // commented out
+        #expect(GlossaryEditor.existingTerm(matching: "NDC", in: text) == nil)
+        #expect(GlossaryEditor.existingTerm(matching: "  ", in: text) == nil)
+    }
+
     @Test func resultParses() throws {
         let messy = try GlossaryFixtures.text("messy.md")
         let out = add("bass lines", "Baseline", to: messy)

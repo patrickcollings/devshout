@@ -487,6 +487,34 @@ enum HistoryText {
     static let audioUnplayable = "The audio couldn't be played."
     static let cannotPlayWhileDictating = "Can't play while a dictation is recording."
 
+    // Adding a correction to the glossary.
+
+    static let correctionIntro = "When speech-to-text writes the first, devshout puts the second. It is saved to the glossary and used from the next dictation, in every mode."
+
+    /// Under the fields, once "Should be" is filled in: where the correction will go.
+    static func correctionTarget(existing: String?) -> String {
+        existing.map { "Adds to the glossary entry for \($0)." } ?? "Not in the glossary yet: adds a new entry."
+    }
+
+    static func correction(_ outcome: GlossaryEditor.CorrectionOutcome, heard: String) -> String {
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch outcome {
+        case .addedToExisting(let term):
+            return "Added “\(heard)” to \(term) in the glossary. The next dictation uses it."
+        case .addedNewEntry(let term, let kind):
+            let section = kind == .person ? "People" : "Terms"
+            return "Added \(term) to the glossary's \(section), heard as “\(heard)”. The next dictation uses it."
+        case .alreadyListed(let term):
+            return "The glossary already has “\(heard)” under \(term)."
+        case .nothingToAdd:
+            return "Nothing was added to the glossary."
+        }
+    }
+
+    static func correctionNotSaved(_ detail: String) -> String {
+        "Couldn't save the glossary: \(detail)"
+    }
+
     /// Under the search field when the search finds nothing.
     static func noMatches(for search: String) -> String {
         "No dictations contain “\(search.trimmingCharacters(in: .whitespacesAndNewlines))”."

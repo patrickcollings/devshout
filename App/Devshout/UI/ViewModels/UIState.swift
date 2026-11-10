@@ -515,6 +515,13 @@ enum HistoryRerunState: Hashable, Sendable {
     case failed(mode: ModeID, message: String)
 }
 
+/// What "Add correction…" did, shown in the detail pane of the recording it was made from.
+struct HistoryCorrectionNotice: Hashable, Sendable {
+    var recordingID: UUID
+    var text: String
+    var tone: StatusTone
+}
+
 /// One titled text in the History detail pane: a clean version, what was pasted, or the transcript as heard.
 struct HistorySection: Hashable, Sendable, Identifiable {
     var id: String

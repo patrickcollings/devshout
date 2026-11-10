@@ -156,6 +156,11 @@ private struct HistoryDetail: View {
             }
 
             HistoryRerunStatus(recording: recording, model: model)
+            if let notice = model.correctionNotice(for: recording.id) {
+                StatusLabel(text: notice.text, tone: notice.tone)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -190,11 +195,18 @@ private struct HistoryDetail: View {
 private struct HistoryActionBar: View {
     let recording: Recording
     @ObservedObject var model: HistoryViewModel
+    @State private var showsCorrection = false
 
     var body: some View {
         HStack(spacing: 8) {
             playButton
             rerunMenu
+            Button("Add correction…") { showsCorrection = true }
+                .help("Teach the glossary a word that was heard wrongly")
+                .popover(isPresented: $showsCorrection, arrowEdge: .bottom) {
+                    HistoryCorrectionForm(model: model, recordingID: recording.id, isPresented: $showsCorrection)
+                        .controlSize(.regular)
+                }
             Spacer(minLength: 0)
         }
         .controlSize(.small)
@@ -241,6 +253,98 @@ private struct HistoryActionBar: View {
             }
             .help("Play the recording")
         }
+    }
+}
+
+/// "Add correction…": what was heard and what it should be. The glossary gets the first as a mishearing of the
+/// second.
+private struct HistoryCorrectionForm: View {
+    @ObservedObject var model: HistoryViewModel
+    let recordingID: UUID
+    @Binding var isPresented: Bool
+
+    @State private var heard: String
+    @State private var term: String
+    @State private var kind: GlossaryEditor.CorrectionKind = .term
+    @FocusState private var focus: Field?
+
+    private enum Field { case heard, term }
+
+    init(model: HistoryViewModel, recordingID: UUID, isPresented: Binding<Bool>, heard: String = "", term: String = "") {
+        self.model = model
+        self.recordingID = recordingID
+        _isPresented = isPresented
+        _heard = State(initialValue: heard)
+        _term = State(initialValue: term)
+    }
+
+    private var canAdd: Bool { model.canAddCorrection(heard: heard, term: term) }
+
+    var body: some View {
+        let hasTerm = !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let existing = hasTerm ? model.existingGlossaryTerm(matching: term) : nil
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add a correction to the glossary").font(.headline)
+            Text(HistoryText.correctionIntro)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
+                GridRow {
+                    Text("Heard")
+                    TextField("core sea", text: $heard)
+                        .focused($focus, equals: .heard)
+                        .onSubmit { focus = .term }
+                }
+                GridRow {
+                    Text("Should be")
+                    TextField("CORSIA", text: $term)
+                        .focused($focus, equals: .term)
+                        .onSubmit(add)
+                }
+                if hasTerm, existing == nil {
+                    GridRow {
+                        Text("Add as")
+                        Picker("Add as", selection: $kind) {
+                            Text("Term").tag(GlossaryEditor.CorrectionKind.term)
+                            Text("Person").tag(GlossaryEditor.CorrectionKind.person)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .autocorrectionDisabled()
+
+            if hasTerm {
+                Text(HistoryText.correctionTarget(existing: existing))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Add", action: add)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canAdd)
+            }
+        }
+        .padding(16)
+        .frame(width: 330)
+        .onAppear { focus = .heard }
+    }
+
+    private func add() {
+        // Return can reach both the field and the default button: only the first one adds.
+        guard canAdd, isPresented else { return }
+        isPresented = false
+        model.addCorrection(heard: heard, term: term, kind: kind, from: recordingID)
     }
 }
 
@@ -346,6 +450,24 @@ private struct HistoryTextBlock: View {
     model.rerunFailed(PreviewData.recordings[0].id, mode: .structure,
                       message: HistoryText.rerunFailed(mode: .structure, .timedOut(after: 45)))
     return HistorySettingsTab(model: model)
+}
+
+#Preview("History: correction added") {
+    let model = HistoryViewModel(recordings: PreviewData.recordings, actions: HistoryViewModel.Actions(
+        addCorrection: { _, _, _ in .addedToExisting(term: "CORSIA") }))
+    model.addCorrection(heard: "core sea", term: "corsia", kind: .term, from: PreviewData.recordings[0].id)
+    return HistorySettingsTab(model: model)
+}
+
+#Preview("History: correction form, existing term") {
+    HistoryCorrectionForm(model: HistoryViewModel(actions: HistoryViewModel.Actions(
+        existingGlossaryTerm: { $0.lowercased() == "corsia" ? "CORSIA" : nil })),
+                          recordingID: UUID(), isPresented: .constant(true), heard: "core sea", term: "corsia")
+}
+
+#Preview("History: correction form, new term") {
+    HistoryCorrectionForm(model: HistoryViewModel(), recordingID: UUID(), isPresented: .constant(true),
+                          heard: "shiv on", term: "Siobhán")
 }
 
 #Preview("History: audio file missing") {
