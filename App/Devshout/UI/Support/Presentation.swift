@@ -248,7 +248,10 @@ enum MenuStatus {
     static func needsAttention(account: ClaudeAccountStatus, claudeSkipped: Bool, model: SpeechModelStatus,
                                microphone: MicPermission, accessibilityTrusted: Bool, now: Date) -> Bool {
         if microphone != .granted || !accessibilityTrusted { return true }
-        if case .failed = model { return true }
+        switch model {
+        case .failed, .notDownloaded: return true
+        default: break
+        }
         if claudeSkipped, case .notConnected = account { return false }
         return account.needsAttention(now: now)
     }
