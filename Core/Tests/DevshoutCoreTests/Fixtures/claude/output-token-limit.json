@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":true,"duration_ms":30000,"num_turns":1,"result":"API Error: Claude's response exceeded the 32000 output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.","session_id":"x"}
