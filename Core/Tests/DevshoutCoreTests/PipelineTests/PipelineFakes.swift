@@ -147,7 +147,7 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
             case .hang:
                 // A dispatch timer rather than Task.sleep, so cancellation doesn't end it (see FakeCleaner.hanging).
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 30) { c.resume() }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
                 }
                 throw FakeError(message: "answered far too late")
             case .empty:
@@ -220,7 +220,8 @@ struct SessionHarness {
          settings: AppSettings = AppSettings(),
          options: DictationOptions = DictationOptions(),
          chunkOrder: [Int] = [0, 1, 2],
-         planError: FakeError? = nil) throws {
+         planError: FakeError? = nil,
+         planHangs: Bool = false) throws {
         temp = try TempDir()
         self.recorder = recorder
         self.engine = engine
@@ -239,6 +240,12 @@ struct SessionHarness {
             history: history,
             planChunks: { samples in
                 planned.mutate { $0.append(samples.count) }
+                if planHangs {
+                    // A stuck VAD call. Ignores cancellation (see FakeCleaner.hanging).
+                    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
+                    }
+                }
                 if let planError { throw planError }
                 // Each chunk is 14.5 s of the recording, as Parakeet's are.
                 return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 232_000, endSample: ($0 + 1) * 232_000,

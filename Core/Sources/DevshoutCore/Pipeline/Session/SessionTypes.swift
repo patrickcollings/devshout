@@ -117,13 +117,52 @@ public struct DictationOptions: Sendable, Hashable {
     public var previousTextCharacters: Int
     /// Transcription language.
     public var language: String
+    /// The time limit for transcribing one chunk is `chunkTimeoutPerAudioSecond` × the chunk's length, and at least
+    /// `minimumChunkTimeout` seconds (see `chunkTimeout(forAudio:)`). A chunk that runs out of time is treated as
+    /// failed: tried once more, then left out. Both 0 (or less) means no limit.
+    ///
+    /// The defaults, 30 s and 4×, are meant to be far from anything a working engine does, so that only a hang
+    /// trips them: on the M1 Pro a 28 s Whisper chunk takes about 3 s and a 14.5 s Parakeet chunk well under 1 s,
+    /// so 4× real time (112 s and 58 s for full chunks) is 40 to 100 times the normal case. That leaves room for a
+    /// machine that is thermally throttled or busy, and the 30 s floor covers the fixed cost that doesn't shrink
+    /// with the chunk (the first call after a model load). The price is that a real hang is only noticed after one
+    /// to two minutes, twice (the retry); after that the rest of the chunks are not tried.
+    public var minimumChunkTimeout: TimeInterval
+    public var chunkTimeoutPerAudioSecond: Double
+    /// The same for chunk planning (voice detection over the whole recording, which runs hundreds of times faster
+    /// than real time): `planningTimeoutPerAudioSecond` × the recording's length, at least `minimumPlanningTimeout`
+    /// seconds. Taking longer than the recording itself is a hang; the dictation then fails, with the audio kept.
+    public var minimumPlanningTimeout: TimeInterval
+    public var planningTimeoutPerAudioSecond: Double
 
     public init(cleanGracePeriod: TimeInterval = 5, streamDrainTimeout: TimeInterval = 2,
-                previousTextCharacters: Int = 200, language: String = "en") {
+                previousTextCharacters: Int = 200, language: String = "en",
+                minimumChunkTimeout: TimeInterval = 30, chunkTimeoutPerAudioSecond: Double = 4,
+                minimumPlanningTimeout: TimeInterval = 30, planningTimeoutPerAudioSecond: Double = 1) {
         self.cleanGracePeriod = cleanGracePeriod
         self.streamDrainTimeout = streamDrainTimeout
         self.previousTextCharacters = previousTextCharacters
         self.language = language
+        self.minimumChunkTimeout = minimumChunkTimeout
+        self.chunkTimeoutPerAudioSecond = chunkTimeoutPerAudioSecond
+        self.minimumPlanningTimeout = minimumPlanningTimeout
+        self.planningTimeoutPerAudioSecond = planningTimeoutPerAudioSecond
+    }
+
+    /// Seconds allowed for transcribing a chunk of `duration` seconds. 0 means no limit.
+    public func chunkTimeout(forAudio duration: TimeInterval) -> TimeInterval {
+        Self.limit(minimum: minimumChunkTimeout, perSecond: chunkTimeoutPerAudioSecond, duration: duration)
+    }
+
+    /// Seconds allowed for planning the chunks of a recording of `duration` seconds. 0 means no limit.
+    public func planningTimeout(forAudio duration: TimeInterval) -> TimeInterval {
+        Self.limit(minimum: minimumPlanningTimeout, perSecond: planningTimeoutPerAudioSecond, duration: duration)
+    }
+
+    private static func limit(minimum: TimeInterval, perSecond: Double, duration: TimeInterval) -> TimeInterval {
+        let scaled = perSecond * max(0, duration)
+        let limit = max(minimum, scaled)
+        return limit > 0 ? limit : 0  // also 0 for NaN
     }
 }
 

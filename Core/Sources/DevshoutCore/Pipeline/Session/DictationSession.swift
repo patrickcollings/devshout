@@ -11,6 +11,9 @@ import Foundation
 /// out, the rest is delivered, and the record's `errorMessage` says which part of the recording is missing. The
 /// dictation only fails when no chunk gave any text.
 ///
+/// Nothing the session waits for can hold it for ever: chunk planning and each chunk's transcription have a time
+/// limit (`DictationOptions`), as clean-up always had. A chunk that runs out of time counts as failed.
+///
 /// States are published on `states`, which finishes after the terminal state (`finished`, `cancelled`, `failed`).
 public actor DictationSession {
     public nonisolated let states: AsyncStream<SessionState>
@@ -173,10 +176,18 @@ public actor DictationSession {
 
         // 2. Plan chunks.
         let chunks: [AudioChunk]
-        do {
-            chunks = try await deps.planChunks(samples).sorted { $0.index < $1.index }
-        } catch {
-            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(Self.describe(error))")
+        let planChunks = deps.planChunks
+        let recorded = samples
+        let planLimit = options.planningTimeout(forAudio: Double(recorded.count) / Double(AudioFormat.sampleRate))
+        switch await Self.bounded(planLimit, { try await planChunks(recorded) }) {
+        case .value(let planned):
+            chunks = planned.sorted { $0.index < $1.index }
+        case .failed(let reason):
+            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(reason)")
+        case .timedOut:
+            return fail(rec, stage: .transcribing,
+                        message: "Couldn't split the audio: finding the speech in it took longer than "
+                            + "\(Self.seconds(planLimit)), so devshout stopped waiting.")
         }
         guard !chunks.isEmpty else {
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
@@ -187,22 +198,39 @@ public actor DictationSession {
         let vocabulary = engine.acceptsVocabularyPrompt ? deps.vocabularyPrompt() : nil
         var transcripts: [ChunkTranscript] = []
         var skipped: [SkippedPart] = []
+        var engineStuck = false
         for (position, chunk) in chunks.enumerated() {
             publish(.transcribing(done: position, total: chunks.count))
+            if engineStuck {
+                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
+                                           endSample: chunk.endSample,
+                                           reason: "not tried, because the engine had stopped answering"))
+                continue
+            }
             let context = TranscriptionContext(language: options.language, vocabularyPrompt: vocabulary,
                                                previousText: Self.tail(of: transcripts.last?.text,
                                                                        characters: options.previousTextCharacters))
             // One more try: a failure is often a one-off (the model being reloaded, a busy Neural Engine).
             var failure: String?
+            var timeouts = 0
+            let limit = options.chunkTimeout(forAudio: chunk.duration)
             for _ in 0..<2 {
-                do {
-                    transcripts.append(try await engine.transcribe(chunk, context: context))
+                switch await Self.bounded(limit, { try await engine.transcribe(chunk, context: context) }) {
+                case .value(let transcript):
+                    transcripts.append(transcript)
                     failure = nil
-                    break
-                } catch {
-                    failure = Self.describe(error)
+                case .failed(let reason):
+                    failure = reason
+                case .timedOut:
+                    failure = "the engine didn't answer within \(Self.seconds(limit))"
+                    timeouts += 1
                 }
+                if failure == nil { break }
             }
+            // Out of time twice running: the engine is stuck, not slow. Both engines run one call at a time, so
+            // every later chunk would queue behind the stuck call and run out of time as well, twice each. Stop
+            // here and deliver what there is, rather than sit in "transcribing" for minutes to learn nothing.
+            if timeouts == 2 { engineStuck = true }
             if let failure {
                 skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
                                            endSample: chunk.endSample, reason: failure))
@@ -330,6 +358,43 @@ public actor DictationSession {
             }
         }
         return await firstToFinish(racers)
+    }
+
+    // MARK: Time limits
+
+    private enum Bounded<Value: Sendable>: Sendable {
+        case value(Value)
+        case failed(String)
+        case timedOut
+    }
+
+    /// Runs `operation`, but stops waiting after `limit` seconds (0 or less: no limit). The operation is cancelled
+    /// then, and whatever it does afterwards is ignored; a stuck Core ML call can't be killed, only abandoned.
+    private nonisolated static func bounded<Value: Sendable>(
+        _ limit: TimeInterval, _ operation: @escaping @Sendable () async throws -> Value
+    ) async -> Bounded<Value> {
+        var racers: [@Sendable () async -> Bounded<Value>] = [
+            {
+                do {
+                    return .value(try await operation())
+                } catch {
+                    return .failed(describe(error))
+                }
+            },
+        ]
+        if limit > 0 {
+            racers.append {
+                try? await Task.sleep(nanoseconds: sleepNanoseconds(limit))
+                return .timedOut
+            }
+        }
+        return await firstToFinish(racers)
+    }
+
+    /// "30 s", "2.5 s".
+    nonisolated static func seconds(_ limit: TimeInterval) -> String {
+        let rounded = (min(max(limit, 0), 86_400) * 10).rounded() / 10
+        return rounded == rounded.rounded() ? "\(Int(rounded)) s" : "\(rounded) s"
     }
 
     // MARK: Helpers
