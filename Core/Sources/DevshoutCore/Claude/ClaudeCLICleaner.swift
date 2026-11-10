@@ -82,7 +82,8 @@ public struct ClaudeCLICleaner: TextCleaner {
                                           configDirectory: configDirectory,
                                           workingDirectory: workingDirectory,
                                           host: host,
-                                          timeout: timeout)
+                                          timeout: timeout,
+                                          extraPath: found.extraPath)
 
         let run: ProcessResult
         do {

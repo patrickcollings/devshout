@@ -159,11 +159,16 @@ public enum ClaudeResultParser {
     public static func looksLikeAuthFailure(_ message: String) -> Bool {
         let text = message.lowercased()
         let notAuth = ["output token", "max_output_tokens", "tokens per", "rate limit", "rate_limit", "usage limit",
-                       "overloaded", "context window", "prompt is too long"]
+                       "overloaded", "context window", "prompt is too long", "unexpected token", "json parse",
+                       "syntaxerror"]
         if notAuth.contains(where: text.contains) { return false }
+        // "token" alone is too broad (Node's "Unexpected token"), so it needs a sign-in word next to it.
         let patterns = [
             #"\b401\b"#, #"oauth"#, #"authenticat"#, #"unauthori[sz]ed"#, #"\blog ?in\b"#, #"/login"#,
-            #"logged (in|out)"#, #"\btoken\b"#, #"invalid api key"#, #"credentials?\b"#,
+            #"logged (in|out)"#, #"\b(access|auth|api|setup|bearer|session|refresh) token"#,
+            #"\btoken (has )?(expired|been revoked|was revoked|revoked|is invalid|invalid|is missing|missing)"#,
+            #"(invalid|expired|revoked|missing) (oauth |access |auth )?token"#, #"invalid api key"#,
+            #"credentials?\b"#,
         ]
         return patterns.contains { text.range(of: $0, options: .regularExpression) != nil }
     }

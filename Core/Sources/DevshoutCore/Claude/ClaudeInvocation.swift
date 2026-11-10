@@ -52,6 +52,8 @@ public struct ClaudeInvocation: Sendable, Hashable {
     public static let basePath = "/usr/bin:/bin:/usr/sbin:/sbin"
 
     public var executable: URL
+    /// More folders for PATH (`ClaudeInstallation.extraPath`).
+    public var extraPath: [String]
     public var model: String
     public var systemPrompt: SystemPrompt
     /// The stdin message (`PromptBuilder.userMessage`).
@@ -66,8 +68,9 @@ public struct ClaudeInvocation: Sendable, Hashable {
 
     public init(executable: URL, model: String, systemPrompt: SystemPrompt, stdin: String,
                 credential: ClaudeCredential, configDirectory: URL?, workingDirectory: URL,
-                host: ClaudeHostEnvironment = .current, timeout: TimeInterval? = nil) {
+                host: ClaudeHostEnvironment = .current, timeout: TimeInterval? = nil, extraPath: [String] = []) {
         self.executable = executable
+        self.extraPath = extraPath
         self.model = model
         self.systemPrompt = systemPrompt
         self.stdin = stdin
@@ -105,12 +108,20 @@ public struct ClaudeInvocation: Sendable, Hashable {
         if let user = host.user, !user.isEmpty { env["USER"] = user }
         env["LANG"] = host.lang
         env["TMPDIR"] = host.tmpDir
-        let claudeDirectory = executable.deletingLastPathComponent().path
-        env["PATH"] = Self.basePath.split(separator: ":").contains(Substring(claudeDirectory))
-            ? Self.basePath : "\(Self.basePath):\(claudeDirectory)"
+        env["PATH"] = Self.path(for: executable, extraPath: extraPath)
         if let configDirectory { env["CLAUDE_CONFIG_DIR"] = configDirectory.path }
         env["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
         return Self.scrubbed(env)
+    }
+
+    /// The system folders, then claude's own folder, then `extraPath`, without repeats.
+    public static func path(for executable: URL, extraPath: [String] = []) -> String {
+        var directories = basePath.split(separator: ":").map(String.init)
+        for directory in [executable.deletingLastPathComponent().path] + extraPath
+            where !directory.isEmpty && !directories.contains(directory) {
+            directories.append(directory)
+        }
+        return directories.joined(separator: ":")
     }
 
     /// Drops keys that must never reach `claude`.

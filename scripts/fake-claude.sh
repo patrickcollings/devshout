@@ -16,10 +16,17 @@
 #
 # FAKE_CLAUDE_RECORD=<file>: also write the arguments (one per line), a "--- env" line and the environment there.
 #
-# Since devshout gives claude a clean environment, tests point devshout at a small wrapper that sets these
-# variables and then runs this script.
+# devshout gives claude a clean environment, so these settings can also come from a `fake-claude.env` file (sh
+# assignments) in $CLAUDE_CONFIG_DIR, or failing that in $HOME/.claude. Tests symlink a `claude` to this script.
 
 set -u
+
+for settings in "${CLAUDE_CONFIG_DIR:-/nonexistent}/fake-claude.env" "${HOME:-/nonexistent}/.claude/fake-claude.env"; do
+    if [ -f "$settings" ]; then
+        . "$settings"
+        break
+    fi
+done
 
 json_escape() {
     # stdin → one JSON string body (no quotes): escapes \ " tab and CR, and joins lines with \n.
@@ -64,7 +71,12 @@ case "$mode" in
         result_json false success "$(printf '```markdown\n%s\n```' "$transcript" | json_escape)"
         ;;
     slow)
-        sleep "${FAKE_CLAUDE_DELAY:-3}"
+        # Stop the sleep too when we're told to stop, so no orphan outlives the test.
+        sleep "${FAKE_CLAUDE_DELAY:-3}" &
+        sleeper=$!
+        trap 'kill "$sleeper" 2>/dev/null; exit 143' TERM INT
+        wait "$sleeper"
+        trap - TERM INT
         result_json false success "$(printf '%s' "$transcript" | json_escape)"
         ;;
     fail)

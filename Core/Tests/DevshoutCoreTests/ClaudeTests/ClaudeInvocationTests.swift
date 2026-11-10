@@ -74,6 +74,12 @@ import Testing
         #expect(inv.environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin")
     }
 
+    @Test func extraPathIsAppended() {
+        var inv = invocation()
+        inv.extraPath = ["/opt/homebrew/bin", "/usr/bin", "/opt/homebrew/bin"]
+        #expect(inv.environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin:/Users/patrick/.local/bin:/opt/homebrew/bin")
+    }
+
     @Test func forbiddenKeysAreScrubbed() {
         let scrubbed = ClaudeInvocation.scrubbed([
             "ANTHROPIC_API_KEY": "sk-ant-api", "ANTHROPIC_AUTH_TOKEN": "t", "CLAUDE_CODE_USE_BEDROCK": "1",

@@ -70,14 +70,49 @@ public enum CoverageCheck {
         return missing.isEmpty ? [] : ["may have dropped: " + missing.joined(separator: ", ")]
     }
 
-    /// The bold terms of a `glossary.md` (`- **CORSIA** — …`, `- !**CORSIA**`). Patterns with placeholders such
-    /// as `AB-{n}` are skipped; ticket IDs are checked separately.
+    /// The terms of a glossary, in either form `TextCleaner.clean` may be given:
+    /// - the Claude rendering (`GlossaryRenderer.forClaude`): `- CORSIA — meaning — heard: core sea` lines under
+    ///   `Terms (…):` and `People (…):` labels;
+    /// - raw `glossary.md`: `- **CORSIA** — …` (also `- !**CORSIA**`), or plain `- CORSIA` under `## Terms` / `## People`.
+    /// Patterns with placeholders such as `AB-{n}` are skipped (ticket IDs are checked separately), and so are the
+    /// bullets of Style and other free-text sections.
     public static func glossaryTerms(in glossary: String) -> [String] {
         var terms: [String] = []
-        for term in matches(of: #"\*\*([^*\n]+?)\*\*"#, in: glossary, group: 1) {
-            let term = term.trimmingCharacters(in: .whitespaces)
-            guard !term.isEmpty, !term.contains("{"), !terms.contains(term) else { continue }
+        func add(_ term: String) {
+            var term = term.trimmingCharacters(in: .whitespaces)
+            if term.hasPrefix("!") { term = String(term.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            guard !term.isEmpty, !term.contains("{"), !terms.contains(term) else { return }
             terms.append(term)
+        }
+
+        var inEntrySection = false
+        for rawLine in glossary.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") {
+                let heading = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces).lowercased()
+                inEntrySection = line.hasPrefix("##") && (heading.hasPrefix("terms") || heading.hasPrefix("people"))
+                continue
+            }
+            if !line.hasPrefix("-"), !line.hasPrefix("*"), line.hasSuffix(":") {
+                let label = line.lowercased()
+                inEntrySection = label.hasPrefix("terms") || label.hasPrefix("people")
+                continue
+            }
+            // Bold terms count wherever they are.
+            let bold = matches(of: #"\*\*([^*\n]+?)\*\*"#, in: line, group: 1)
+            if !bold.isEmpty {
+                // Only the bullet's own term, not bold words in a description or a style note.
+                if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("-!") || line.hasPrefix("- !") {
+                    add(bold[0])
+                }
+                continue
+            }
+            // Plain bullets only inside Terms and People (indented `heard:` sub-bullets are skipped).
+            guard inEntrySection, rawLine.first == "-" || rawLine.first == "*", line.count > 2 else { continue }
+            let body = line.dropFirst().trimmingCharacters(in: .whitespaces)
+            if body.lowercased().hasPrefix("heard:") { continue }
+            let term = body.components(separatedBy: " — ").first ?? body
+            add(term.components(separatedBy: " - ").first ?? term)
         }
         return terms
     }

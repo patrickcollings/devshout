@@ -135,6 +135,11 @@ import Testing
         ("response exceeded the 32000 output token maximum", false),
         ("Request timed out", false),
         ("Something went wrong", false),
+        ("SyntaxError: Unexpected token '?'", false),
+        ("JSON Parse error: Unexpected token: }", false),
+        ("The token has expired", true),
+        ("Invalid access token", true),
+        ("too many tokens in the prompt", false),
     ])
     func authHeuristic(message: String, isAuth: Bool) {
         #expect(ClaudeResultParser.looksLikeAuthFailure(message) == isAuth)

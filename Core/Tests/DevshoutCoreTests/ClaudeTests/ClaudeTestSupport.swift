@@ -1,9 +1,4 @@
 import Foundation
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Darwin)
-import Darwin
-#endif
 import Testing
 @testable import DevshoutCore
 
@@ -58,31 +53,25 @@ enum ClaudeTestSupport {
         return url
     }
 
-    /// Writes an executable `/bin/sh` script and returns its URL.
-    @discardableResult
-    static func writeScript(_ body: String, named name: String, in directory: URL) throws -> URL {
-        // Written with O_CLOEXEC: a child spawned by a parallel test at the same moment must not inherit the
-        // descriptor, or running the script fails with ETXTBSY ("text file busy") for as long as that child lives.
-        let url = directory.appendingPathComponent(name)
-        let fd = open(url.path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o755)
-        guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
-        let bytes = Array(("#!/bin/sh\n" + body + "\n").utf8)
-        let written = bytes.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-        close(fd)
-        guard written == bytes.count else { throw CocoaError(.fileWriteUnknown) }
-        return url
-    }
-
-    /// A `claude` in a fresh folder that runs `scripts/fake-claude.sh` in the given mode. devshout gives claude a
-    /// clean environment, so the mode has to be baked into the wrapper.
+    /// A `claude` in `directory`: a symlink to `scripts/fake-claude.sh`. devshout gives claude a clean environment,
+    /// so the mode and other settings go in `fake-claude.env` in `settingsDirectory`, which the script reads from
+    /// `$CLAUDE_CONFIG_DIR` (clean-ups) or `$HOME/.claude` (`--version`).
+    ///
+    /// Nothing executable is written here: running a file another thread has just written can fail with ETXTBSY
+    /// ("text file busy") while a child spawned by a parallel test still holds the descriptor.
     static func fakeClaude(mode: String, extraEnvironment: [String: String] = [:],
-                           in directory: URL) throws -> URL {
-        var exports = "FAKE_CLAUDE_MODE='\(mode)'; export FAKE_CLAUDE_MODE\n"
-        for (key, value) in extraEnvironment.sorted(by: { $0.key < $1.key }) {
-            exports += "\(key)='\(value)'; export \(key)\n"
+                           in directory: URL, settingsDirectory: URL) throws -> URL {
+        var settings = extraEnvironment
+        settings["FAKE_CLAUDE_MODE"] = mode
+        var lines = ""
+        for (key, value) in settings.sorted(by: { $0.key < $1.key }) {
+            lines += "\(key)='\(value)'; export \(key)\n"
         }
-        return try writeScript(exports + "exec /bin/sh '\(fakeClaudeScript.path)' \"$@\"",
-                               named: "claude", in: directory)
+        try FileManager.default.createDirectory(at: settingsDirectory, withIntermediateDirectories: true)
+        try lines.write(to: settingsDirectory.appendingPathComponent("fake-claude.env"), atomically: true, encoding: .utf8)
+        let link = directory.appendingPathComponent("claude")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fakeClaudeScript)
+        return link
     }
 
     static let credential = ClaudeCredential(token: "sk-ant-oat01-test-token",
@@ -97,9 +86,16 @@ struct FakeFileSystem: FileSystem {
     var homeDirectory: URL = URL(fileURLWithPath: "/Users/patrick")
     var executables: Set<String> = []
     var directories: [String: [String]] = [:]
+    /// Executables that are scripts (`#!…`); the others read as a native binary.
+    var scripts: Set<String> = []
 
     func isExecutableFile(atPath path: String) -> Bool { executables.contains(path) }
     func contentsOfDirectory(atPath path: String) -> [String] { directories[path] ?? [] }
+    func readPrefix(atPath path: String, maxLength: Int) -> Data? {
+        guard executables.contains(path) else { return nil }
+        let bytes = scripts.contains(path) ? Data("#!/usr/bin/env node\n".utf8) : Data([0xCF, 0xFA, 0xED, 0xFE])
+        return bytes.prefix(maxLength)
+    }
 }
 
 /// A ProcessRunner that answers from a closure and records every request.

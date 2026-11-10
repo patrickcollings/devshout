@@ -94,6 +94,24 @@ import Testing
         ])
     }
 
+    /// What the session really passes: the glossary as rendered for Claude.
+    @Test func glossaryTermsFromTheClaudeRendering() throws {
+        let rendered = GlossaryRenderer.forClaude(GlossaryParser.parse(try ClaudeTestSupport.fixture("glossary.md")))
+        #expect(!rendered.contains("**"))
+        #expect(CoverageCheck.glossaryTerms(in: rendered) == [
+            "CORSIA", "NDC", "My Supply", "proponent", "Siobhán Murphy",
+        ])
+        let raw = "the core sea number for my supply is wrong"
+        #expect(CoverageCheck.warnings(raw: raw, output: "The CORSIA number is wrong.",
+                                       glossaryTerms: CoverageCheck.glossaryTerms(in: rendered))
+                == ["may have dropped: My Supply"])
+    }
+
+    @Test func glossaryTermsFromPlainBullets() {
+        #expect(CoverageCheck.glossaryTerms(in: "## Terms\n- CORSIA\n- NDC — contribution\n  - heard: endy see\n## Style\n- Use British English.")
+                == ["CORSIA", "NDC"])
+    }
+
     @Test func glossaryTermsFromMarkdown() throws {
         let glossary = try ClaudeTestSupport.fixture("glossary.md")
         #expect(CoverageCheck.glossaryTerms(in: glossary) == [

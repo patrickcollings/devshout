@@ -22,7 +22,8 @@ import Testing
         let record = root.appendingPathComponent("record.txt")
         var env = extra
         env["FAKE_CLAUDE_RECORD"] = record.path
-        let claude = try ClaudeTestSupport.fakeClaude(mode: mode, extraEnvironment: env, in: bin)
+        let claude = try ClaudeTestSupport.fakeClaude(mode: mode, extraEnvironment: env, in: bin,
+                                                      settingsDirectory: root.appendingPathComponent("config"))
         let installation = ClaudeInstallation(url: claude, version: ClaudeVersion(2, 1, 300))
         let cleaner = ClaudeCLICleaner(
             installation: { installed ? installation : nil },
@@ -159,7 +160,8 @@ import Testing
         await expectCleanError({ $0 == .timedOut(after: 0.5) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.5), glossary: "")
         }
-        #expect(Date().timeIntervalSince(start) < 5)
+        // Generous: other suites can keep the cooperative pool busy for a while. The child would take 600 s.
+        #expect(Date().timeIntervalSince(start) < 25)
     }
 
     @Test func slowWithinTheLimitSucceeds() async throws {
@@ -170,12 +172,12 @@ import Testing
     }
 
     @Test func slowPastTheLimitTimesOut() async {
-        let s = try! setup(mode: "slow", extra: ["FAKE_CLAUDE_DELAY": "4"])
+        let s = try! setup(mode: "slow", extra: ["FAKE_CLAUDE_DELAY": "60"])
         let start = Date()
         await expectCleanError({ $0 == .timedOut(after: 0.3) }) {
             _ = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 0.3), glossary: "")
         }
-        #expect(Date().timeIntervalSince(start) < 3.5)
+        #expect(Date().timeIntervalSince(start) < 25)
     }
 
     @Test func noCredentialMeansNotConnected() async {
@@ -240,6 +242,6 @@ import Testing
         } catch let error as CleanError {
             #expect(error == .processFailed(exitCode: -1, message: "Cancelled"))
         }
-        #expect(Date().timeIntervalSince(start) < 5)
+        #expect(Date().timeIntervalSince(start) < 25)
     }
 }

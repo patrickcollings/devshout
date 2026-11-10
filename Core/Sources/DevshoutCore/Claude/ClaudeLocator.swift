@@ -7,6 +7,8 @@ public protocol FileSystem: Sendable {
     func isExecutableFile(atPath path: String) -> Bool
     /// Names in a directory, or [] when it doesn't exist or can't be read.
     func contentsOfDirectory(atPath path: String) -> [String]
+    /// The first bytes of a file (to tell a script from a native binary), or nil.
+    func readPrefix(atPath path: String, maxLength: Int) -> Data?
 }
 
 /// The real file system.
@@ -27,6 +29,12 @@ public struct LocalFileSystem: FileSystem {
 
     public func contentsOfDirectory(atPath path: String) -> [String] {
         (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+    }
+
+    public func readPrefix(atPath path: String, maxLength: Int) -> Data? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        return try? handle.read(upToCount: maxLength)
     }
 }
 
@@ -60,10 +68,14 @@ public struct ClaudeVersion: Sendable, Hashable, Comparable, Codable, CustomStri
 public struct ClaudeInstallation: Sendable, Hashable, Codable {
     public var url: URL
     public var version: ClaudeVersion
+    /// Folders `claude` needs on its PATH besides its own, e.g. where `node` is for an npm install
+    /// (`#!/usr/bin/env node`). Empty for the native binary.
+    public var extraPath: [String]
 
-    public init(url: URL, version: ClaudeVersion) {
+    public init(url: URL, version: ClaudeVersion, extraPath: [String] = []) {
         self.url = url
         self.version = version
+        self.extraPath = extraPath
     }
 
     public var meetsMinimum: Bool { version >= ClaudeLocator.minimumVersion }
@@ -142,14 +154,22 @@ public struct ClaudeLocator: Sendable {
 
     /// The first executable `claude`, or nil.
     public func findExecutable() async -> URL? {
-        for path in candidatePaths() where fileSystem.isExecutableFile(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-        return await askLoginShell()
+        await findExecutables().first
     }
 
-    /// `$SHELL -l -c 'command -v claude'`, so a PATH set up in the user's profile is honoured.
-    func askLoginShell() async -> URL? {
+    /// Every executable `claude` in search order; the login shell is asked only when none of the fixed paths has one.
+    public func findExecutables() async -> [URL] {
+        var found: [URL] = []
+        for path in candidatePaths() where fileSystem.isExecutableFile(atPath: path) {
+            let url = URL(fileURLWithPath: path)
+            if !found.contains(url) { found.append(url) }
+        }
+        if found.isEmpty, let url = await askLoginShell(for: "claude") { found.append(url) }
+        return found
+    }
+
+    /// `$SHELL -l -c 'command -v <name>'`, so a PATH set up in the user's profile is honoured.
+    func askLoginShell(for name: String) async -> URL? {
         guard let shell, !shell.isEmpty, fileSystem.isExecutableFile(atPath: shell) else { return nil }
         let home = fileSystem.homeDirectory.path
         let host = ProcessInfo.processInfo.environment
@@ -161,7 +181,7 @@ public struct ClaudeLocator: Sendable {
         ]
         if let user = host["USER"] { environment["USER"] = user; environment["LOGNAME"] = user }
         let request = ProcessRequest(executable: URL(fileURLWithPath: shell),
-                                     arguments: ["-l", "-c", "command -v claude"],
+                                     arguments: ["-l", "-c", "command -v \(name)"],
                                      environment: environment,
                                      currentDirectory: fileSystem.homeDirectory,
                                      timeout: shellTimeout)
@@ -175,15 +195,14 @@ public struct ClaudeLocator: Sendable {
         return URL(fileURLWithPath: path)
     }
 
-    /// Runs `claude --version` and parses it.
-    public func version(of executable: URL) async throws -> ClaudeVersion {
-        let directory = executable.deletingLastPathComponent().path
+    /// Runs `claude --version` (with the same PATH a clean-up gets) and parses it.
+    public func version(of executable: URL, extraPath: [String] = []) async throws -> ClaudeVersion {
         let request = ProcessRequest(
             executable: executable,
             arguments: ["--version"],
             environment: [
                 "HOME": fileSystem.homeDirectory.path,
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:\(directory)",
+                "PATH": ClaudeInvocation.path(for: executable, extraPath: extraPath),
                 "LANG": ProcessInfo.processInfo.environment["LANG"] ?? "en_GB.UTF-8",
                 "DISABLE_AUTOUPDATER": "1",
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
@@ -203,18 +222,49 @@ public struct ClaudeLocator: Sendable {
         throw ClaudeLocatorError.versionUnreadable(path: executable.path, output: output)
     }
 
-    /// Finds `claude`, reads its version and checks it against `minimumVersion`.
+    /// Finds `claude`, reads its version and checks it against `minimumVersion`. When a candidate doesn't run or is
+    /// too old, the next one is tried; if none works, the first candidate's error is thrown.
     public func locate() async throws -> ClaudeInstallation {
-        guard let url = await findExecutable() else {
+        let candidates = await findExecutables()
+        guard !candidates.isEmpty else {
             var searched = candidatePaths()
             if let shell { searched.append("\(shell) -l -c 'command -v claude'") }
             throw ClaudeLocatorError.notFound(searched: searched)
         }
-        let version = try await version(of: url)
-        guard version >= minimumVersion else {
-            throw ClaudeLocatorError.tooOld(path: url.path, found: version, minimum: minimumVersion)
+        var firstError: Error?
+        for url in candidates {
+            do {
+                let extraPath = await extraPath(for: url)
+                let version = try await version(of: url, extraPath: extraPath)
+                guard version >= minimumVersion else {
+                    throw ClaudeLocatorError.tooOld(path: url.path, found: version, minimum: minimumVersion)
+                }
+                return ClaudeInstallation(url: url, version: version, extraPath: extraPath)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
-        return ClaudeInstallation(url: url, version: version)
+        throw firstError!
+    }
+
+    /// The native installer and Homebrew give a binary that needs nothing else. An npm install gives a script
+    /// (`#!/usr/bin/env node`, or a wrapper that runs one), so `node` must be on the PATH too: look beside
+    /// `claude`, then in Homebrew, nvm and the login shell.
+    func extraPath(for executable: URL) async -> [String] {
+        guard let prefix = fileSystem.readPrefix(atPath: executable.path, maxLength: 2),
+              prefix == Data("#!".utf8) else { return [] }
+        let home = fileSystem.homeDirectory.path
+        let ownDirectory = executable.deletingLastPathComponent().path
+        var directories = [ownDirectory, "/opt/homebrew/bin", "/usr/local/bin"]
+        directories += nvmCandidates(home: home).map { URL(fileURLWithPath: $0).deletingLastPathComponent().path }
+        directories += ["\(home)/.volta/bin", "\(home)/.local/share/fnm/aliases/default/bin"]
+        for directory in directories where fileSystem.isExecutableFile(atPath: "\(directory)/node") {
+            return directory == ownDirectory ? [] : [directory]
+        }
+        if let node = await askLoginShell(for: "node") {
+            return [node.deletingLastPathComponent().path]
+        }
+        return []
     }
 }
 

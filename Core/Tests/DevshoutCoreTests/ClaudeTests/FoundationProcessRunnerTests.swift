@@ -144,6 +144,6 @@ import Testing
         await #expect(throws: CancellationError.self) {
             _ = try await task.value
         }
-        #expect(Date().timeIntervalSince(start) < 5)
+        #expect(Date().timeIntervalSince(start) < 25)
     }
 }

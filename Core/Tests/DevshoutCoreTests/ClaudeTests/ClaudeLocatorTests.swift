@@ -76,6 +76,57 @@ import Testing
         #expect(shellRequest.environment["HOME"] == home)
     }
 
+    @Test func npmGlobalInstallGetsNodeOnItsPath() async throws {
+        let claude = "\(home)/.npm-global/bin/claude"
+        let fs = FakeFileSystem(executables: [claude, "/opt/homebrew/bin/node"], scripts: [claude])
+        let stub = runner()
+        let found = try await locator(fs, runner: stub).locate()
+        #expect(found.url.path == claude)
+        #expect(found.extraPath == ["/opt/homebrew/bin"])
+        let versionRequest = try #require(stub.requests.first { $0.arguments == ["--version"] })
+        #expect(versionRequest.environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin:\(home)/.npm-global/bin:/opt/homebrew/bin")
+    }
+
+    @Test func nvmInstallFindsNodeBesideIt() async throws {
+        let bin = "\(home)/.nvm/versions/node/v22.1.0/bin"
+        let fs = FakeFileSystem(executables: ["\(bin)/claude", "\(bin)/node", "/opt/homebrew/bin/node"],
+                                directories: ["\(home)/.nvm/versions/node": ["v22.1.0"]],
+                                scripts: ["\(bin)/claude"])
+        let found = try await locator(fs).locate()
+        #expect(found.extraPath == [])
+    }
+
+    @Test func nodeFromTheLoginShell() async throws {
+        let claude = "\(home)/.claude/local/claude"
+        let fs = FakeFileSystem(executables: [claude, "/bin/zsh", "\(home)/.asdf/shims/node"], scripts: [claude])
+        let stub = StubRunner { request in
+            if request.arguments == ["--version"] { return StubRunner.result(stdout: "2.1.300 (Claude Code)\n") }
+            if request.arguments == ["-l", "-c", "command -v node"] {
+                return StubRunner.result(stdout: "\(home)/.asdf/shims/node\n")
+            }
+            return StubRunner.result(exitCode: 1)
+        }
+        let found = try await locator(fs, runner: stub).locate()
+        #expect(found.extraPath == ["\(home)/.asdf/shims"])
+    }
+
+    @Test func nativeBinaryNeedsNoExtraPath() async throws {
+        let fs = FakeFileSystem(executables: ["\(home)/.local/bin/claude", "/opt/homebrew/bin/node"])
+        #expect(try await locator(fs).locate().extraPath == [])
+    }
+
+    @Test func aCandidateThatDoesNotRunIsSkipped() async throws {
+        let broken = "\(home)/.local/bin/claude"
+        let fs = FakeFileSystem(executables: [broken, "/opt/homebrew/bin/claude"])
+        let stub = StubRunner { request in
+            if request.executable.path == broken { return StubRunner.result(stderr: "env: node: No such file", exitCode: 127) }
+            return StubRunner.result(stdout: "2.1.5 (Claude Code)\n")
+        }
+        let found = try await locator(fs, runner: stub).locate()
+        #expect(found.url.path == "/opt/homebrew/bin/claude")
+        #expect(found.version == ClaudeVersion(2, 1, 5))
+    }
+
     @Test func loginShellAnswerMustBeExecutable() async {
         let fs = FakeFileSystem(executables: ["/bin/zsh"])
         let stub = runner(shellAnswer: "/nowhere/claude\n")
@@ -167,7 +218,8 @@ import Testing
         let home = try ClaudeTestSupport.temporaryDirectory("home")
         let bin = home.appendingPathComponent(".local/bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        _ = try ClaudeTestSupport.fakeClaude(mode: "ok-echo", extraEnvironment: ["FAKE_CLAUDE_VERSION": "2.1.42"], in: bin)
+        _ = try ClaudeTestSupport.fakeClaude(mode: "ok-echo", extraEnvironment: ["FAKE_CLAUDE_VERSION": "2.1.42"],
+                                             in: bin, settingsDirectory: home.appendingPathComponent(".claude"))
         let locator = ClaudeLocator(fileSystem: LocalFileSystem(homeDirectory: home), shell: nil)
         let found = try await locator.locate()
         #expect(found.url.path == bin.appendingPathComponent("claude").path)
