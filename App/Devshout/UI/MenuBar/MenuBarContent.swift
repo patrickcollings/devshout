@@ -7,8 +7,7 @@
 //     }
 //     // .menuBarExtraStyle(.menu) is the default.
 //
-// "Settings…" calls MenuBarViewModel.Actions.openSettings, which by default posts `.devshoutOpenSettings` for
-// `SettingsOpenerView` (see SettingsOpener.swift: opening Settings from a menu bar menu needs a workaround).
+// "Settings…" calls MenuBarViewModel.Actions.openSettings, which wiring points at `SettingsWindowController`.
 //
 // Unsure on macOS (not compiled here):
 // - Whether `.symbolEffect` animates inside a MenuBarExtra label (it is rendered into the status item image; if it

@@ -57,6 +57,8 @@ struct EngineCard: View {
 /// Progress bar and summary for a model that is downloading or loading; status line otherwise.
 struct ModelProgressView: View {
     let status: SpeechModelStatus
+    /// When the model began loading, if known: shows the time taken and explains a slow first load.
+    var since: Date? = nil
 
     var body: some View {
         switch status {
@@ -72,10 +74,28 @@ struct ModelProgressView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-        case .preparing:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(status.summary).foregroundStyle(.secondary)
+        case .preparing(let phase):
+            TimelineView(.periodic(from: since ?? Date(), by: 1)) { context in
+                let elapsed = since.map { context.date.timeIntervalSince($0) } ?? 0
+                let optimising = phase == .compiling || elapsed > SpeechEngineViewModel.slowLoad
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(optimising ? "Getting ready for this Mac…" : "Loading…")
+                            .foregroundStyle(.secondary)
+                        if since != nil, optimising {
+                            Text(UIFormat.timer(elapsed))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    if optimising {
+                        Text(SpeechModelStatus.optimisingExplanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         case .ready:
             StatusLabel(text: status.summary, tone: .positive)

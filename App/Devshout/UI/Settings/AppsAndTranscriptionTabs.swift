@@ -192,8 +192,8 @@ struct TranscriptionSettingsTab: View {
         }
         .formStyle(.grouped)
         .frame(width: SettingsLayout.width, height: 470)
-        .onAppear { microphone.startLevelMonitoring() }
-        .onDisappear { microphone.stopLevelMonitoring() }
+        .onAppear { microphone.startLevelMonitoring(for: .settings) }
+        .onDisappear { microphone.stopLevelMonitoring(for: .settings) }
     }
 }
 
@@ -215,7 +215,7 @@ private struct ModelRow: View {
                             .background(Capsule().fill(Color.accentColor.opacity(0.15)))
                     }
                 }
-                ModelProgressView(status: model.status(for: engine))
+                ModelProgressView(status: model.status(for: engine), since: model.preparingSince[engine])
                     .font(.callout)
             }
             Spacer()

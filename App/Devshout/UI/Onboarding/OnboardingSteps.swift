@@ -225,7 +225,7 @@ struct SpeechModelStepView: View {
             }
         case .downloading, .preparing:
             VStack(alignment: .leading, spacing: 6) {
-                ModelProgressView(status: status)
+                ModelProgressView(status: status, since: model.preparingSince[model.selectedEngine])
                 Text("You can carry on: the download continues in the background.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

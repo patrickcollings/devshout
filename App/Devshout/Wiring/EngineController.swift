@@ -57,8 +57,9 @@ final class EngineController {
     }
 
     /// Why the selected model can't be used for a dictation now, if it can't: a title and a hint for the pill.
-    /// Loading an already-downloaded model is fine (a dictation waits a few seconds for it); a download or the
-    /// one-off optimisation after it could take minutes, with nothing to cancel, so those refuse.
+    /// Anything short of ready refuses. Loading is usually a few seconds, but the first load in this app (or after
+    /// a macOS update) includes Core ML's one-off optimisation for this Mac, which takes minutes and can't be told
+    /// apart from a plain load, and a dictation queued behind it would look stuck.
     var selectedModelProblem: (title: String, detail: String)? {
         if deleting.contains(selected) {
             return ("Speech model is being deleted", "Download it again in Settings → Transcription.")
@@ -73,9 +74,13 @@ final class EngineController {
         case .downloading:
             let progress = status.fraction.map { " (\(UIFormat.percent($0)))" } ?? ""
             return ("Speech model still downloading\(progress)", "It carries on in the background. Try again when it's done.")
-        case .preparing(.compiling):
-            return ("Optimising the speech model", "This happens once after a download and can take a few minutes.")
-        default:
+        case .preparing:
+            if model.isOptimising(selected) {
+                return ("Getting the speech model ready",
+                        "A one-off step on this Mac that can take several minutes. Settings shows the progress.")
+            }
+            return ("Speech model is loading", "Try again in a few seconds.")
+        case .ready:
             return nil
         }
     }
@@ -110,6 +115,7 @@ final class EngineController {
         task.cancel()
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         model.statuses[id] = EngineFactory.isModelDownloaded(id, locations: locations)
             ? .ready(sizeOnDisk: nil) : .notDownloaded
@@ -124,6 +130,7 @@ final class EngineController {
         prepareTasks[id]?.cancel()
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         deleting.insert(id)
         let instance = instance(for: id)
@@ -182,6 +189,7 @@ final class EngineController {
         let instance = instance(for: id)
         let run = UUID()
         runs[id] = run
+        model.preparingSince[id] = Date()
         let wasDownloaded = EngineFactory.isModelDownloaded(id, locations: locations)
         model.statuses[id] = wasDownloaded
             ? .preparing(.loading)
@@ -229,6 +237,7 @@ final class EngineController {
     private func prepareFinished(_ id: EngineID, error: Error?) {
         prepareTasks[id] = nil
         runs[id] = nil
+        model.preparingSince[id] = nil
         speedTrackers[id] = nil
         if let error {
             if error is CancellationError { return }

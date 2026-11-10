@@ -19,11 +19,8 @@ final class MenuBarViewModel: ObservableObject {
         var cancelDictation: @MainActor () -> Void = {}
         var setDefaultMode: @MainActor (ModeID) -> Void = { _ in }
         var openOnboarding: @MainActor () -> Void = {}
-        /// Open the Settings window. The default asks `SettingsOpenerView` to do it (see SettingsOpener.swift).
-        /// Wiring can wrap it to refresh state first (e.g. re-detect Claude Code).
-        var openSettings: @MainActor () -> Void = {
-            NotificationCenter.default.post(name: .devshoutOpenSettings, object: nil)
-        }
+        /// Open the Settings window (wiring refreshes what it shows first, e.g. re-detects Claude Code).
+        var openSettings: @MainActor () -> Void = {}
     }
 
     @Published var isRecording = false
@@ -178,9 +175,25 @@ final class OnboardingViewModel: ObservableObject {
         onFinish()
     }
 
-    /// Restart from the beginning (Settings → General → Reopen onboarding, menu → Set Up devshout…).
+    /// Reopen (Settings → General → Reopen onboarding, menu → Set Up devshout…): at the first set-up step that
+    /// still needs doing, or at Welcome when nothing or everything is done.
     func restart() {
-        go(to: .welcome)
+        let setUp: [OnboardingStep] = [.microphone, .accessibility, .speechModel, .claude]
+        let remaining = setUp.filter { !isDone($0) }
+        let partlyDone = !remaining.isEmpty && remaining.count < setUp.count
+        go(to: partlyDone ? remaining[0] : .welcome)
+    }
+
+    /// Whether a step's job is already done, for the ticks in the step indicator. Set-up steps go by the real
+    /// state (so they are ticked when onboarding is reopened); the others once the user has moved past them.
+    func isDone(_ step: OnboardingStep) -> Bool {
+        switch step {
+        case .microphone: microphone.permission == .granted
+        case .accessibility: accessibility.isTrusted
+        case .speechModel: speech.selectedStatus.isReady
+        case .claude: claude.account.isConnected
+        case .welcome, .hotkeys, .tryIt: step < self.step
+        }
     }
 
     /// Called by `OnboardingView` when its window appears: runs the current step's hooks again.
@@ -271,7 +284,7 @@ final class OnboardingViewModel: ObservableObject {
         case .microphone, .tryIt:
             if isMonitoringLevels {
                 isMonitoringLevels = false
-                microphone.stopLevelMonitoring()
+                microphone.stopLevelMonitoring(for: .onboarding)
             }
         default:
             break
@@ -282,7 +295,7 @@ final class OnboardingViewModel: ObservableObject {
         // MicrophoneViewModel waits for permission itself; this only keeps start/stop balanced.
         guard !isMonitoringLevels else { return }
         isMonitoringLevels = true
-        microphone.startLevelMonitoring()
+        microphone.startLevelMonitoring(for: .onboarding)
     }
 
     private func childrenChanged() {
@@ -390,6 +403,7 @@ final class DevshoutViewModels {
     let apps: AppsSettingsViewModel
     let glossary: GlossaryViewModel
     let privacy: PrivacyViewModel
+    let history: HistoryViewModel
     let menuBar: MenuBarViewModel
     let onboarding: OnboardingViewModel
     let pill: RecordingPillViewModel
@@ -421,6 +435,7 @@ final class DevshoutViewModels {
         self.apps = apps ?? AppsSettingsViewModel()
         self.glossary = glossary ?? GlossaryViewModel()
         self.privacy = privacy ?? PrivacyViewModel()
+        self.history = HistoryViewModel()
         self.menuBar = MenuBarViewModel(claude: claude, speech: speech, microphone: microphone,
                                         accessibility: accessibility, hotkeys: hotkeys)
         self.onboarding = OnboardingViewModel(microphone: microphone, accessibility: accessibility, speech: speech,

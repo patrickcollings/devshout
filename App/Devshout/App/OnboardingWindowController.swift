@@ -19,9 +19,15 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         return window.isVisible && window.isKeyWindow && NSApp.isActive
     }
 
+    /// The window is open (possibly behind another app's windows).
+    var isVisible: Bool { window?.isVisible ?? false }
+
     func show() {
         let window = self.window ?? makeWindow()
         self.window = window
+        // A Dock icon while onboarding is open: the steps send the user to System Settings and to permission
+        // prompts, which cover the window, and a menu bar app's window can't be reached with ⌘-Tab.
+        NSApp.setActivationPolicy(.regular)
         // An LSUIElement app's windows open behind the frontmost app unless it activates.
         NSApp.activate()
         if !window.isVisible { window.center() }
