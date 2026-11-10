@@ -23,6 +23,7 @@ swift build --package-path Mac               # macOS only
 swift run --package-path Mac devshout-cli --help
 scripts/build-app.sh                         # builds and signs the app; prints the .app path (build/ is git-ignored)
 open "$(scripts/build-app.sh)"               # build and launch
+swift scripts/make-app-icon.swift            # redraws the app icon PNGs in App/Resources (the artwork lives in the script)
 ```
 
 CI:
