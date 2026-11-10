@@ -141,8 +141,15 @@ private struct HistoryDetail: View {
                 Spacer(minLength: 0)
             }
 
+            HistoryActionBar(recording: recording, model: model)
+
             if let problem = recording.errorMessage ?? recording.fallbackReason {
                 StatusLabel(text: problem, tone: recording.status == .failed ? .critical : .warning)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let problem = model.playbackProblem(for: recording.id) {
+                StatusLabel(text: problem, tone: .warning)
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -177,6 +184,46 @@ private struct HistoryDetail: View {
     }
 }
 
+/// The compact row of things to do with the recording, under its facts.
+private struct HistoryActionBar: View {
+    let recording: Recording
+    @ObservedObject var model: HistoryViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            playButton
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+    }
+
+    @ViewBuilder
+    private var playButton: some View {
+        if recording.audioDeletedAt != nil {
+            // Retention removed the audio; the text is all that is left.
+            Button {} label: {
+                Label(HistoryText.audioDeletedLabel, systemImage: "speaker.slash")
+            }
+            .disabled(true)
+            .help(HistoryText.audioDeletedHelp(for: recording))
+        } else if model.isPlaying(recording.id) {
+            Button {
+                model.togglePlayback(recording.id)
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+            }
+            .help("Stop playing")
+        } else {
+            Button {
+                model.togglePlayback(recording.id)
+            } label: {
+                Label("Play", systemImage: "play.fill")
+            }
+            .help("Play the recording")
+        }
+    }
+}
+
 private struct HistoryTextBlock: View {
     let title: String
     let text: String
@@ -202,7 +249,24 @@ private struct HistoryTextBlock: View {
 }
 
 #Preview("History: nothing matches") {
-    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings, searchText: "procurement"))
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings, searchText: "biodiversity"))
+}
+
+#Preview("History: playing") {
+    let model = HistoryViewModel(recordings: PreviewData.recordings)
+    model.playbackStarted(PreviewData.recordings[0].id)
+    return HistorySettingsTab(model: model)
+}
+
+#Preview("History: audio deleted") {
+    HistorySettingsTab(model: HistoryViewModel(recordings: PreviewData.recordings,
+                                               selection: PreviewData.recordings[3].id))
+}
+
+#Preview("History: audio file missing") {
+    let model = HistoryViewModel(recordings: PreviewData.recordings)
+    model.playbackUnavailable(PreviewData.recordings[0].id, message: HistoryText.audioMissing)
+    return HistorySettingsTab(model: model)
 }
 
 #Preview("History: empty") {

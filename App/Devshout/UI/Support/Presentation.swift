@@ -382,6 +382,21 @@ enum HistoryText {
         return parts.joined(separator: " · ")
     }
 
+    // Playing the audio.
+
+    /// On the (disabled) Play button once retention has deleted audio.wav.
+    static let audioDeletedLabel = "Audio deleted"
+
+    static func audioDeletedHelp(for recording: Recording) -> String {
+        guard let date = recording.audioDeletedAt else { return "The audio has been deleted. The text is kept." }
+        return "The audio was deleted on \(UIFormat.day(date)), as set in Settings → Privacy. The text is kept."
+    }
+
+    /// The record says there is audio, but audio.wav isn't in the recording's folder.
+    static let audioMissing = "The audio file is no longer there."
+    static let audioUnplayable = "The audio couldn't be played."
+    static let cannotPlayWhileDictating = "Can't play while a dictation is recording."
+
     /// Under the search field when the search finds nothing.
     static func noMatches(for search: String) -> String {
         "No dictations contain “\(search.trimmingCharacters(in: .whitespacesAndNewlines))”."

@@ -496,6 +496,17 @@ enum AudioRetention: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
+// MARK: - History
+
+/// What the History detail pane's Play button is doing.
+enum HistoryPlayback: Hashable, Sendable {
+    case idle
+    /// This recording's audio is playing.
+    case playing(UUID)
+    /// This recording's audio couldn't be played; `message` says why ("The audio file is no longer there").
+    case unavailable(UUID, message: String)
+}
+
 // MARK: - Recording pill
 
 /// What the overlay pill is showing (PLAN §7.3). Showing and hiding the panel is up to the caller.

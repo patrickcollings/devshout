@@ -349,15 +349,27 @@ final class HistoryViewModel: ObservableObject {
         /// Delete one recording (audio and text). The view asks for confirmation first.
         var delete: @MainActor (UUID) -> Void = { _ in }
         var showInFinder: @MainActor (UUID) -> Void = { _ in }
+        /// Play the recording's audio from the start. The wiring answers with `playbackStarted`,
+        /// `playbackUnavailable` and, at the end of the file, `playbackEnded`.
+        var play: @MainActor (UUID) -> Void = { _ in }
+        /// Stop whatever is playing. Called whether or not anything is, so it must be safe at any time.
+        var stopPlayback: @MainActor () -> Void = {}
     }
 
     /// Newest first.
-    @Published var recordings: [Recording]
+    @Published var recordings: [Recording] {
+        didSet { stopPlaybackUnlessSelected() }
+    }
     /// The search field's text. Blank shows everything.
-    @Published var searchText: String
+    @Published var searchText: String {
+        didSet { stopPlaybackUnlessSelected() }
+    }
     /// The row picked in the list. Nil (nothing picked yet, or the picked one was filtered out or deleted) shows
     /// the first visible recording.
-    @Published var selection: UUID?
+    @Published var selection: UUID? {
+        didSet { stopPlaybackUnlessSelected() }
+    }
+    @Published private(set) var playback: HistoryPlayback = .idle
     var actions: Actions
 
     init(recordings: [Recording] = [], searchText: String = "", selection: UUID? = nil, actions: Actions = Actions()) {
@@ -376,9 +388,62 @@ final class HistoryViewModel: ObservableObject {
         return visible.first { $0.id == selection } ?? visible.first
     }
 
-    var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
     func reload() { actions.reload() }
     func delete(_ id: UUID) { actions.delete(id) }
     func showInFinder(_ id: UUID) { actions.showInFinder(id) }
+
+    // MARK: Playback
+
+    func isPlaying(_ id: UUID) -> Bool { playback == .playing(id) }
+
+    /// Why this recording's audio couldn't be played, after a try that failed.
+    func playbackProblem(for id: UUID) -> String? {
+        if case .unavailable(id, let message) = playback { return message }
+        return nil
+    }
+
+    /// The Play / Stop button.
+    func togglePlayback(_ id: UUID) {
+        if isPlaying(id) {
+            stopPlayback()
+        } else {
+            playback = .idle
+            actions.play(id)
+        }
+    }
+
+    /// Stops the audio. Called from explicit events as well as the Stop button: another recording is shown, the
+    /// Settings window closes or moves to another tab, a dictation starts.
+    func stopPlayback() {
+        actions.stopPlayback()
+        if case .playing = playback { playback = .idle }
+    }
+
+    /// The audio belongs to the recording on show: anything else on show means silence (and no stale message).
+    private func stopPlaybackUnlessSelected() {
+        let shown = selectedRecording?.id
+        switch playback {
+        case .idle: break
+        case .playing(let id): if id != shown { stopPlayback() }
+        case .unavailable(let id, _): if id != shown { playback = .idle }
+        }
+    }
+
+    // Wiring → model.
+
+    func playbackStarted(_ id: UUID) {
+        playback = .playing(id)
+        // Finding the file took a moment: another recording may be on show by now.
+        stopPlaybackUnlessSelected()
+    }
+
+    /// The file played to its end, or the wiring stopped it.
+    func playbackEnded(_ id: UUID) {
+        if isPlaying(id) { playback = .idle }
+    }
+
+    func playbackUnavailable(_ id: UUID, message: String) {
+        playback = .unavailable(id, message: message)
+        stopPlaybackUnlessSelected()
+    }
 }
