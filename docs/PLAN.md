@@ -295,7 +295,7 @@ The thresholds live in settings so the spike can tune them, and the defaults com
 ### 4.2 Stitching (`Stitcher`, pure, in Core)
 
 - **Natural cuts** have no overlap. Join with a single space, trim, and collapse whitespace. No casing or punctuation is changed in Raw mode; Tidy/Structure handle that.
-- **Forced cuts** have a 1.0 s overlap, deduplicated with the **midpoint rule**: let `m` = the middle of the overlap. Drop the previous chunk's words that *start* after `m` and the next chunk's words that *start* before `m`. Both engines give word or token timings (FluidAudio `tokenTimings`, WhisperKit `wordTimestamps`).
+- **Forced cuts** have a 1.0 s overlap, deduplicated by word timings: let `m` = the middle of the overlap. Drop the previous chunk's words that *start* at or after `m`, then drop the next chunk's leading words that start before the middle of the last word the previous chunk kept. (As built. The first version cut both chunks at `m`, which lost or doubled a word the two decodes timed either side of `m`, and left a double when they wrote it differently: "12%" then "twelve".) Both engines give word or token timings (FluidAudio `tokenTimings`, WhisperKit `wordTimestamps`).
 - **Fallback when timings are missing:** remove the longest suffix of chunk *n* (≤ 8 words) that equals a prefix of chunk *n+1*, compared case- and punctuation-insensitively.
 - **Glued words across a seam** ("worksks", FluidAudio's own long-form notes): if the last word of *n* and the first word of *n+1* overlap as character strings, keep one copy.
 - **Whisper context:** each Whisper chunk is conditioned on the glossary prompt plus the last ~40 tokens of the previous chunk's text, within the 224-token prompt limit (§6.4).

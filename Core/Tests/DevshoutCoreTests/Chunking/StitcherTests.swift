@@ -171,6 +171,37 @@ private func timed(_ words: [(String, TimeInterval)]) -> [TimedWord] {
         #expect(forced("so yes", "yes", previousWords: previous, nextWords: next) == "so yes")
     }
 
+    @Test func theNextChunkIsCutAfterTheLastWordKept() {
+        // "12%." (13.55–14.1) is the last word kept. The next chunk's copy is dropped wherever in the first half of
+        // that word it starts, whatever it is spelt like, and whichever side of the midpoint (13.708) it falls.
+        let previous = [TimedWord(text: "not", start: 13.3, end: 13.5), TimedWord(text: "12%.", start: 13.55, end: 14.1)]
+        for start in [13.5, 13.6, 13.7, 13.72, 13.8] {
+            let next = [TimedWord(text: "Not", start: 13.31, end: 13.49), TimedWord(text: "twelve.", start: start, end: 14.1),
+                        TimedWord(text: "Right.", start: 14.3, end: 14.6)]
+            #expect(forced("not 12%.", "Not twelve. Right.", previousWords: previous, nextWords: next)
+                == "not 12%. Right.", "twelve at \(start)")
+        }
+        // A new word is kept even when the next decode has it starting a little before the last kept word ends.
+        let follows = [TimedWord(text: "Right.", start: 14.0, end: 14.4)]
+        #expect(forced("not 12%.", "Right.", previousWords: previous, nextWords: follows) == "not 12%. Right.")
+    }
+
+    @Test func aPreviousChunkWithNothingBeforeTheMidpointLeavesTheNextWhole() {
+        let previous = timed([("late", 13.8)])
+        let next = timed([("late", 13.75), ("again", 14.0)])
+        #expect(forced("late", "late again", previousWords: previous, nextWords: next) == "late again")
+    }
+
+    @Test func fallbackMatchesNumberWordsWithDigits() {
+        #expect(Stitcher.comparable("twelve.") == "12")
+        #expect(Stitcher.comparable("12%") == "12")
+        #expect(Stitcher.comparable("Seventy,") == "70")
+        #expect(Stitcher.comparable("Twelfth") == "twelfth")
+        #expect(forced("we need 3", "three more days") == "we need three more days")
+        // Different numbers are not a repeat.
+        #expect(forced("we need 3", "four more days") == "we need 3 four more days")
+    }
+
     @Test func tokenTimingAlignment() {
         let transcript = ChunkTranscript(
             index: 0, startSample: 0, endSample: 64_000, text: "Hello, world — it's AB-1234.",

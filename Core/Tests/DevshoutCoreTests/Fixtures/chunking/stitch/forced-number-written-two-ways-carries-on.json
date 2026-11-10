@@ -1,0 +1,98 @@
+{
+  "description": "As forced-number-written-two-ways, but the speaker carries on: the next chunk keeps everything after the word heard twice.",
+  "expected": "So the increase is 20%, not 12%. That matters for the forecast.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "So the increase is 20%, not 12%.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "So",
+          "start": 11.6,
+          "end": 11.75
+        },
+        {
+          "text": "the",
+          "start": 11.8,
+          "end": 11.9
+        },
+        {
+          "text": "increase",
+          "start": 11.95,
+          "end": 12.4
+        },
+        {
+          "text": "is",
+          "start": 12.45,
+          "end": 12.55
+        },
+        {
+          "text": "20%,",
+          "start": 12.6,
+          "end": 13.15
+        },
+        {
+          "text": "not",
+          "start": 13.3,
+          "end": 13.5
+        },
+        {
+          "text": "12%.",
+          "start": 13.55,
+          "end": 14.1
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "Not twelve. That matters for the forecast.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Not",
+          "start": 13.32,
+          "end": 13.5
+        },
+        {
+          "text": "twelve.",
+          "start": 13.74,
+          "end": 14.1
+        },
+        {
+          "text": "That",
+          "start": 14.4,
+          "end": 14.6
+        },
+        {
+          "text": "matters",
+          "start": 14.65,
+          "end": 15.0
+        },
+        {
+          "text": "for",
+          "start": 15.05,
+          "end": 15.15
+        },
+        {
+          "text": "the",
+          "start": 15.2,
+          "end": 15.3
+        },
+        {
+          "text": "forecast.",
+          "start": 15.35,
+          "end": 15.9
+        }
+      ]
+    }
+  ]
+}

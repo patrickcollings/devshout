@@ -1,0 +1,73 @@
+{
+  "description": "Seen with Parakeet: the previous chunk ended \"not 12%.\" and the next, starting 1 s earlier, heard \"Not twelve.\", with \"twelve\" starting after the middle of the overlap (13.708 s). The same word written two ways can't be matched as text; it is dropped because it starts inside the last word the previous chunk kept. This used to give \"not 12%. twelve.\"",
+  "expected": "So the increase is 20%, not 12%.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "So the increase is 20%, not 12%.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "So",
+          "start": 11.6,
+          "end": 11.75
+        },
+        {
+          "text": "the",
+          "start": 11.8,
+          "end": 11.9
+        },
+        {
+          "text": "increase",
+          "start": 11.95,
+          "end": 12.4
+        },
+        {
+          "text": "is",
+          "start": 12.45,
+          "end": 12.55
+        },
+        {
+          "text": "20%,",
+          "start": 12.6,
+          "end": 13.15
+        },
+        {
+          "text": "not",
+          "start": 13.3,
+          "end": 13.5
+        },
+        {
+          "text": "12%.",
+          "start": 13.55,
+          "end": 14.1
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "Not twelve.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Not",
+          "start": 13.32,
+          "end": 13.5
+        },
+        {
+          "text": "twelve.",
+          "start": 13.74,
+          "end": 14.1
+        }
+      ]
+    }
+  ]
+}
