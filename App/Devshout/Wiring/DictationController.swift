@@ -60,7 +60,7 @@ final class DictationController {
     private var cancelRequested = false
     /// Closed when a dictation is cancelled after recording stopped, so a late result is never pasted.
     private var deliveryGate = LockedBox(true)
-    /// Return → "Paste raw now" while Claude is tidying (the pill's panel never takes key focus).
+    /// ⌥Return → "Paste raw now" while Claude is tidying (the pill's panel never takes key focus).
     private var returnKeyTask: Task<Void, Never>?
 
     init(services: Services, pill: RecordingPillViewModel, menuBar: MenuBarViewModel) {
@@ -318,11 +318,12 @@ final class DictationController {
         }
     }
 
-    /// While Claude is tidying, Return means "Paste raw now" (it is swallowed system-wide for those seconds).
+    /// While Claude is tidying, ⌥Return means "Paste raw now". Plain Return is left alone: swallowing it system-wide
+    /// for up to 45 s would break typing in a terminal or chat box meanwhile.
     private func setReturnKeyEnabled(_ enabled: Bool) {
         if enabled {
             guard returnKeyTask == nil else { return }
-            let events = KeyboardShortcuts.events(for: KeyboardShortcuts.Shortcut(.return))
+            let events = KeyboardShortcuts.events(for: KeyboardShortcuts.Shortcut(.return, modifiers: [.option]))
             returnKeyTask = Task {
                 for await event in events where event == .keyDown {
                     self.pasteRawNow()

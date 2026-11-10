@@ -62,9 +62,9 @@ Useful places:
 - [ ] **Hold to talk:** hold ⌥Space, talk, let go → pasted
 - [ ] Settings → General → Hotkey behaviour "Toggle only" and "Hold to talk only" behave as named
 - [ ] The pill: red dot, mode chip, waveform that follows your voice, timer; hover shows Stop and Cancel, and both work
-- [ ] After stopping: "Transcribing…", then "Tidying with Haiku…" with **Paste raw now ⏎**; clicking it, or pressing
-      Return, pastes the raw text straight away ("Pasted raw: You chose to paste the raw text")
-- [ ] Return works normally again in other apps once the pill has moved on from "Tidying…"
+- [ ] After stopping: "Transcribing…", then "Tidying with Haiku…" with **Paste raw now ⌥⏎**; clicking it, or pressing
+      ⌥Return, pastes the raw text straight away ("Pasted raw: You chose to paste the raw text")
+- [ ] Plain Return keeps working in other apps while "Tidying…" shows (only ⌥Return is taken)
 - [ ] Menu → **Cancel Dictation** while it's still transcribing or tidying: the pill goes, nothing is pasted later,
       and the recording's folder still has its audio
 - [ ] Done: "✓ Pasted into <app>", fades after about a second
