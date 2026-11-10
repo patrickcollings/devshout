@@ -1,0 +1,11 @@
+Warning: some harmless notice printed before the result
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 1800,
+  "result": "```\nThe tidied text.\n```",
+  "total_cost_usd": 0.0009,
+  "brand_new_field": {"anything": [true, null, 3.5]},
+  "usage": {"input_tokens": "not-a-number", "output_tokens": 10}
+}
