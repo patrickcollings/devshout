@@ -109,23 +109,53 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
     let id: EngineID
     let maxChunkDuration: TimeInterval = 14.5
     let acceptsVocabularyPrompt: Bool
-    let failAtIndex: Int?
+    /// What happens on each call for a chunk index, in order; when they run out (or for other chunks) the call
+    /// succeeds. `[.fail, .fail]` fails the chunk and its retry; `[.fail]` fails once and then works.
+    let script: [Int: [Step]]
     let calls = Locked<[(index: Int, context: TranscriptionContext)]>([])
 
-    init(id: EngineID = .parakeetV3, acceptsVocabularyPrompt: Bool = false, failAtIndex: Int? = nil) {
+    enum Step: Sendable {
+        case fail
+        /// Never answers, like a stuck Core ML call. Ignores cancellation.
+        case hang
+        /// Answers with no text (silence, or a cough).
+        case empty
+    }
+
+    init(id: EngineID = .parakeetV3, acceptsVocabularyPrompt: Bool = false, failAtIndex: Int? = nil,
+         script: [Int: [Step]] = [:]) {
         self.id = id
         self.acceptsVocabularyPrompt = acceptsVocabularyPrompt
-        self.failAtIndex = failAtIndex
+        var script = script
+        if let failAtIndex { script[failAtIndex] = [.fail, .fail] }
+        self.script = script
     }
 
     func prepare(progress: @escaping @Sendable (ModelProgress) -> Void) async throws {}
     func unload() async {}
 
     func transcribe(_ chunk: AudioChunk, context: TranscriptionContext) async throws -> ChunkTranscript {
-        calls.mutate { $0.append((chunk.index, context)) }
-        if chunk.index == failAtIndex { throw FakeError(message: "engine exploded") }
+        let attempt = calls.mutate { calls -> Int in
+            calls.append((chunk.index, context))
+            return calls.filter { $0.index == chunk.index }.count - 1
+        }
+        var text = "part \(chunk.index)"
+        if let steps = script[chunk.index], attempt < steps.count {
+            switch steps[attempt] {
+            case .fail:
+                throw FakeError(message: "engine exploded")
+            case .hang:
+                // A dispatch timer rather than Task.sleep, so cancellation doesn't end it (see FakeCleaner.hanging).
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 30) { c.resume() }
+                }
+                throw FakeError(message: "answered far too late")
+            case .empty:
+                text = ""
+            }
+        }
         return ChunkTranscript(index: chunk.index, startSample: chunk.startSample, endSample: chunk.endSample,
-                               text: "part \(chunk.index)", engine: id, elapsed: 0.01)
+                               text: text, engine: id, elapsed: 0.01)
     }
 
     var calledIndices: [Int] { calls.get().map(\.index) }
@@ -210,7 +240,8 @@ struct SessionHarness {
             planChunks: { samples in
                 planned.mutate { $0.append(samples.count) }
                 if let planError { throw planError }
-                return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 100, endSample: $0 * 100 + 100,
+                // Each chunk is 14.5 s of the recording, as Parakeet's are.
+                return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 232_000, endSample: ($0 + 1) * 232_000,
                                                    samples: [Float](repeating: 0, count: 100)) }
             },
             stitch: { transcripts in

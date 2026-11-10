@@ -7,6 +7,10 @@ import Foundation
 /// sees it, and every outcome after recording starts (finished, cancelled or failed) saves `record.json` next to the
 /// audio. Clean-up failures never fail the dictation: the raw text is delivered and the reason recorded.
 ///
+/// One chunk failing doesn't lose the others: a chunk the engine can't transcribe is tried once more and then left
+/// out, the rest is delivered, and the record's `errorMessage` says which part of the recording is missing. The
+/// dictation only fails when no chunk gave any text.
+///
 /// States are published on `states`, which finishes after the terminal state (`finished`, `cancelled`, `failed`).
 public actor DictationSession {
     public nonisolated let states: AsyncStream<SessionState>
@@ -182,32 +186,47 @@ public actor DictationSession {
         let engine = deps.engine
         let vocabulary = engine.acceptsVocabularyPrompt ? deps.vocabularyPrompt() : nil
         var transcripts: [ChunkTranscript] = []
-        for chunk in chunks {
-            publish(.transcribing(done: transcripts.count, total: chunks.count))
+        var skipped: [SkippedPart] = []
+        for (position, chunk) in chunks.enumerated() {
+            publish(.transcribing(done: position, total: chunks.count))
             let context = TranscriptionContext(language: options.language, vocabularyPrompt: vocabulary,
                                                previousText: Self.tail(of: transcripts.last?.text,
                                                                        characters: options.previousTextCharacters))
-            do {
-                transcripts.append(try await engine.transcribe(chunk, context: context))
-            } catch {
-                if !transcripts.isEmpty { rec.rawText = deps.stitch(transcripts) }
-                return fail(rec, stage: .transcribing,
-                            message: "Couldn't transcribe part \(chunk.index + 1) of \(chunks.count): \(Self.describe(error))")
+            // One more try: a failure is often a one-off (the model being reloaded, a busy Neural Engine).
+            var failure: String?
+            for _ in 0..<2 {
+                do {
+                    transcripts.append(try await engine.transcribe(chunk, context: context))
+                    failure = nil
+                    break
+                } catch {
+                    failure = Self.describe(error)
+                }
+            }
+            if let failure {
+                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
+                                           endSample: chunk.endSample, reason: failure))
             }
         }
-        publish(.transcribing(done: transcripts.count, total: chunks.count))
+        publish(.transcribing(done: chunks.count, total: chunks.count))
+        let partial = SkippedPart.summary(skipped, of: chunks.count)
 
         // 4. Stitch and apply glossary fixes.
         let raw = deps.stitch(transcripts)
-        rec.rawText = raw
+        if !transcripts.isEmpty { rec.rawText = raw }
         var text = raw
-        if settings.applyGlossaryFixes {
+        if settings.applyGlossaryFixes, !transcripts.isEmpty {
             text = deps.fixText(raw)
             rec.fixedText = text
             rec.fixesApplied = true
         }
         rec.timings.transcription = deps.dateSource.now().timeIntervalSince(stoppedAt)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Nothing to deliver. Say why when the engine failed, rather than blaming the speaker.
+            if let first = skipped.first {
+                let what = chunks.count == 1 ? "the recording" : "any of the recording's \(chunks.count) parts"
+                return fail(rec, stage: .transcribing, message: "Couldn't transcribe \(what): \(first.reason)")
+            }
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
         }
 
@@ -250,13 +269,16 @@ public actor DictationSession {
         rec.deliveredText = deliveredText
         rec.delivered = DeliveryRecord(outcome)
         rec.status = .completed
-        if let recorderError { rec.errorMessage = "The recorder reported: \(recorderError)" }
+        // Problems that didn't stop the dictation, for History.
+        let problems = [partial?.detail, recorderError.map { "The recorder reported: \($0)" }].compactMap { $0 }
+        if !problems.isEmpty { rec.errorMessage = problems.joined(separator: " ") }
 
         // 7. History.
         let finished = SessionState.finished(outcome: outcome, usedRaw: usedRaw, reason: reason, authFailed: authFailed)
         var result = saveAndFinish(rec, state: finished)
         result.cleanError = cleanError
         result.authFailed = authFailed
+        result.missingPartsNotice = partial?.notice
         return result
     }
 

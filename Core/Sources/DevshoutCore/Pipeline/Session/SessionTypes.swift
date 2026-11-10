@@ -43,14 +43,19 @@ public struct DictationResult: Sendable {
     public var authFailed: Bool
     /// Set when `record.json` couldn't be written.
     public var saveError: String?
+    /// Set when the text was delivered without part of the recording, because the engine couldn't transcribe it:
+    /// a short line for the pill ("Part 2 of 3 is missing: see History"). The full account, with where in the
+    /// recording and why, is in `recording.errorMessage`.
+    public var missingPartsNotice: String?
 
     public init(recording: Recording, state: SessionState, cleanError: CleanError? = nil, authFailed: Bool = false,
-                saveError: String? = nil) {
+                saveError: String? = nil, missingPartsNotice: String? = nil) {
         self.recording = recording
         self.state = state
         self.cleanError = cleanError
         self.authFailed = authFailed
         self.saveError = saveError
+        self.missingPartsNotice = missingPartsNotice
     }
 
     /// The text that reached the clipboard, if any.
@@ -119,6 +124,42 @@ public struct DictationOptions: Sendable, Hashable {
         self.streamDrainTimeout = streamDrainTimeout
         self.previousTextCharacters = previousTextCharacters
         self.language = language
+    }
+}
+
+/// A chunk that was left out of a dictation because the engine couldn't transcribe it.
+struct SkippedPart: Sendable, Hashable {
+    /// 1-based position among the recording's chunks, as shown to the user.
+    var number: Int
+    var startSample: Int
+    var endSample: Int
+    var reason: String
+
+    /// "0:14 to 0:29": where the part is in the recording, so it can be found again in the audio.
+    var timeRange: String {
+        "\(Self.clock(startSample)) to \(Self.clock(endSample))"
+    }
+
+    static func clock(_ sample: Int) -> String {
+        let seconds = max(0, sample) / AudioFormat.sampleRate
+        let minutes = seconds / 60
+        let rest = seconds % 60
+        return "\(minutes):\(rest < 10 ? "0" : "")\(rest)"
+    }
+
+    /// What to tell the user about the parts left out of a dictation of `total` parts: `detail` for the record's
+    /// `errorMessage` (History), `notice` for the pill. Nil when nothing was left out.
+    static func summary(_ skipped: [SkippedPart], of total: Int) -> (detail: String, notice: String)? {
+        guard let first = skipped.first else { return nil }
+        if skipped.count == 1 {
+            return ("Part \(first.number) of \(total) (\(first.timeRange)) couldn't be transcribed and is missing "
+                        + "from the text: \(first.reason). The audio was kept.",
+                    "Part \(first.number) of \(total) is missing: see History")
+        }
+        let each = skipped.map { "part \($0.number) (\($0.timeRange)): \($0.reason)" }.joined(separator: "; ")
+        return ("\(skipped.count) of \(total) parts couldn't be transcribed and are missing from the text: \(each). "
+                    + "The audio was kept.",
+                "\(skipped.count) of \(total) parts are missing: see History")
     }
 }
 
