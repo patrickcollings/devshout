@@ -78,13 +78,28 @@ struct RecordingPill: View {
                 PillIconButton(systemName: "xmark", help: "Cancel (Esc)") { model.cancel() }
             }
             .transition(.opacity)
-        } else if model.phase.isRecording || isTranscribing {
+        } else if model.phase.isRecording {
             PillTimer(startedAt: model.startedAt, frozen: model.finalDuration)
+        } else if isTranscribing {
+            HStack(spacing: 6) {
+                PillTimer(startedAt: model.startedAt, frozen: model.finalDuration)
+                dismissButton
+            }
         } else if model.showsPasteRawButton {
-            Button("Paste raw now ⌥⏎") { model.pasteRawNow() }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Skip Claude and paste what was transcribed")
+            HStack(spacing: 6) {
+                Button("Paste raw now ⌥⏎") { model.pasteRawNow() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Skip Claude and paste what was transcribed")
+                dismissButton
+            }
+        }
+    }
+
+    /// After recording has stopped Esc is no longer devshout's, so the pill always offers a way out.
+    private var dismissButton: some View {
+        PillIconButton(systemName: "xmark", help: "Cancel: nothing is pasted, and the recording stays in history") {
+            model.cancel()
         }
     }
 

@@ -18,6 +18,10 @@ final class EngineController {
     private(set) var selected: EngineID
     private var engines: [EngineID: any TranscriptionEngine] = [:]
     private var prepareTasks: [EngineID: Task<Void, Never>] = [:]
+    /// When each engine's current prepare run began, to tell a slow first load from a normal one.
+    private var prepareStarted: [EngineID: Date] = [:]
+    /// A load still running after this long is taken to be the one-off optimisation.
+    private static let slowLoad: TimeInterval = 15
     private var pendingUnload: [EngineID] = []
     private var speedTrackers: [EngineID: SpeedTracker] = [:]
     /// The current prepare run per engine, so a cancelled run's late progress is ignored.
@@ -57,8 +61,9 @@ final class EngineController {
     }
 
     /// Why the selected model can't be used for a dictation now, if it can't: a title and a hint for the pill.
-    /// Loading an already-downloaded model is fine (a dictation waits a few seconds for it); a download or the
-    /// one-off optimisation after it could take minutes, with nothing to cancel, so those refuse.
+    /// Anything short of ready refuses. Loading is usually a few seconds, but the first load in this app (or after
+    /// a macOS update) includes Core ML's one-off optimisation for this Mac, which takes minutes and can't be told
+    /// apart from a plain load, and a dictation queued behind it would look stuck.
     var selectedModelProblem: (title: String, detail: String)? {
         if deleting.contains(selected) {
             return ("Speech model is being deleted", "Download it again in Settings → Transcription.")
@@ -75,7 +80,14 @@ final class EngineController {
             return ("Speech model still downloading\(progress)", "It carries on in the background. Try again when it's done.")
         case .preparing(.compiling):
             return ("Optimising the speech model", "This happens once after a download and can take a few minutes.")
-        default:
+        case .preparing:
+            let waited = prepareStarted[selected].map { Date().timeIntervalSince($0) } ?? 0
+            if waited > Self.slowLoad {
+                return ("Optimising the speech model",
+                        "A one-off step for this Mac that can take several minutes. Settings → Transcription shows when it's ready.")
+            }
+            return ("Speech model is loading", "Try again in a few seconds.")
+        case .ready:
             return nil
         }
     }
@@ -182,6 +194,7 @@ final class EngineController {
         let instance = instance(for: id)
         let run = UUID()
         runs[id] = run
+        prepareStarted[id] = Date()
         let wasDownloaded = EngineFactory.isModelDownloaded(id, locations: locations)
         model.statuses[id] = wasDownloaded
             ? .preparing(.loading)
