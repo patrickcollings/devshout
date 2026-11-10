@@ -180,6 +180,70 @@ import Testing
         #expect(Date().timeIntervalSince(start) < 25)
     }
 
+    // MARK: A run that timed out after answering
+
+    /// A cleaner whose `claude` is a stub: the run "times out" with `stdout` already printed.
+    func timedOutCleaner(stdout: String, exitCode: Int32 = 143) throws -> ClaudeCLICleaner {
+        let root = try ClaudeTestSupport.temporaryDirectory("cleaner-stub")
+        let runner = StubRunner { _ in StubRunner.result(stdout: stdout, exitCode: exitCode, timedOut: true, elapsed: 20) }
+        return ClaudeCLICleaner(
+            installation: { ClaudeInstallation(url: URL(fileURLWithPath: "/usr/bin/true"), version: ClaudeVersion(2, 1, 300)) },
+            credential: { ClaudeTestSupport.credential },
+            configDirectory: root.appendingPathComponent("config"),
+            workingDirectory: root.appendingPathComponent("cwd"),
+            runner: runner,
+            host: ClaudeTestSupport.host,
+            temporaryDirectory: root.appendingPathComponent("tmp"))
+    }
+
+    func resultJSON(_ text: String, isError: Bool = false, subtype: String = "success") -> String {
+        let escaped = text.replacingOccurrences(of: "\"", with: "\\\"")
+        return #"{"type":"result","subtype":"\#(subtype)","is_error":\#(isError),"result":"\#(escaped)"}"# + "\n"
+    }
+
+    @Test func aTimedOutRunThatHadAlreadyAnsweredIsUsed() async throws {
+        // The runner stopped claude with SIGTERM (exit code 143) after the limit, but the result was on stdout.
+        let cleaner = try timedOutCleaner(stdout: resultJSON(transcript))
+        let result = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+        #expect(result.text == transcript)
+        #expect(result.elapsed == 20)
+        // SIGKILL (137) after ignoring SIGTERM is no different.
+        let killed = try timedOutCleaner(stdout: "warming up\n" + resultJSON(transcript), exitCode: 137)
+        #expect(try await killed.clean(transcript, mode: mode(.structure, timeout: 45), glossary: "").text == transcript)
+    }
+
+    @Test func aTimedOutRunWithoutACompleteResultStillTimesOut() async throws {
+        let whole = resultJSON(transcript)
+        let cases = [
+            "",                                             // nothing printed
+            String(whole.prefix(whole.count / 2)),          // cut off part-way through the result
+            "Thinking…\n",                                  // only noise
+            resultJSON("Claude AI usage limit reached.", isError: true),
+            resultJSON("", subtype: "error_during_execution"),
+            resultJSON(""),                                 // a "successful" result with no text
+        ]
+        for stdout in cases {
+            let cleaner = try timedOutCleaner(stdout: stdout)
+            await expectCleanError({ $0 == .timedOut(after: 20) }) {
+                _ = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+            }
+        }
+    }
+
+    @Test func aTimedOutAnswerStillHasToPassTheSanityChecks() async throws {
+        let cleaner = try timedOutCleaner(stdout: resultJSON("Sure."))
+        await expectCleanError({ if case .rejectedOutput = $0 { true } else { false } }) {
+            _ = try await cleaner.clean(transcript, mode: mode(.tidy, timeout: 20), glossary: "")
+        }
+    }
+
+    @Test func lingeringAfterTheAnswerIsNotATimeout() async throws {
+        // End to end: the fake prints its result and then stays running until the runner stops it.
+        let s = try setup(mode: "linger")
+        let result = try await s.cleaner.clean(transcript, mode: mode(.tidy, timeout: 2), glossary: "")
+        #expect(result.text == transcript)
+    }
+
     @Test func noCredentialMeansNotConnected() async {
         let s = try! setup(mode: "ok-echo", credential: nil)
         await expectCleanError({ $0 == .notConnected }) {

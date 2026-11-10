@@ -10,6 +10,7 @@
 #   auth-fail  print an is_error JSON result about authentication on stdout and exit 1 (what claude -p does)
 #   rate-limit print an is_error JSON result about a usage limit and exit 1
 #   hang       never answer (until killed)
+#   linger     ok-echo, then stay running (until killed): a claude that answered but is slow to exit
 #   essay      answer with a long essay (fails Tidy's length check)
 #   empty      a successful JSON result with an empty result
 #   garbage    print something that isn't JSON and exit 0
@@ -92,6 +93,10 @@ case "$mode" in
         exit 1
         ;;
     hang)
+        exec sleep 600
+        ;;
+    linger)
+        result_json false success "$(printf '%s' "$transcript" | json_escape)"
         exec sleep 600
         ;;
     essay)
