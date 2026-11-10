@@ -1,0 +1,110 @@
+{
+  "description": "A recording with natural and forced cuts, one empty chunk and chunks in any order.",
+  "expected": "First we look at the numbers. Then the procurement team checks every project before the deadline. Done.",
+  "chunks": [
+    {
+      "index": 3,
+      "startSample": 500000,
+      "endSample": 560000,
+      "overlapBefore": 0,
+      "text": "Done.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 10000,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Then the procurement team checks every",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Then",
+          "start": 0.6,
+          "end": 0.8
+        },
+        {
+          "text": "the",
+          "start": 0.9,
+          "end": 1.0
+        },
+        {
+          "text": "procurement",
+          "start": 1.1,
+          "end": 1.8
+        },
+        {
+          "text": "team",
+          "start": 2.0,
+          "end": 2.3
+        },
+        {
+          "text": "checks",
+          "start": 12.9,
+          "end": 13.3
+        },
+        {
+          "text": "every",
+          "start": 13.65,
+          "end": 13.9
+        }
+      ]
+    },
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 8000,
+      "overlapBefore": 0,
+      "text": "First we look at the numbers.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 2,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "every project before the deadline.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "every",
+          "start": 13.66,
+          "end": 13.9
+        },
+        {
+          "text": "project",
+          "start": 13.95,
+          "end": 14.4
+        },
+        {
+          "text": "before",
+          "start": 14.5,
+          "end": 14.8
+        },
+        {
+          "text": "the",
+          "start": 14.85,
+          "end": 14.95
+        },
+        {
+          "text": "deadline.",
+          "start": 15.0,
+          "end": 15.6
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "startSample": 600000,
+      "endSample": 620000,
+      "overlapBefore": 0,
+      "text": " ",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}

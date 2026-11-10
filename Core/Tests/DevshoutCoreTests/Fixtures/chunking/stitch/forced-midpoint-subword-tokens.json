@@ -1,0 +1,103 @@
+{
+  "description": "Timings given per sub-word token (SentencePiece style) are matched to the words of the text by their letters.",
+  "expected": "Check the CORSIA numbers before Friday, please.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Check the CORSIA numbers before",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "▁Check",
+          "start": 10.0,
+          "end": 10.3
+        },
+        {
+          "text": "▁the",
+          "start": 10.4,
+          "end": 10.5
+        },
+        {
+          "text": "▁COR",
+          "start": 10.6,
+          "end": 10.8
+        },
+        {
+          "text": "SIA",
+          "start": 10.9,
+          "end": 11.2
+        },
+        {
+          "text": "▁num",
+          "start": 13.5,
+          "end": 13.6
+        },
+        {
+          "text": "bers",
+          "start": 13.6,
+          "end": 13.7
+        },
+        {
+          "text": "▁before",
+          "start": 13.9,
+          "end": 14.1
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "numbers before Friday, please.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "▁num",
+          "start": 13.5,
+          "end": 13.6
+        },
+        {
+          "text": "bers",
+          "start": 13.6,
+          "end": 13.7
+        },
+        {
+          "text": "▁before",
+          "start": 13.92,
+          "end": 14.1
+        },
+        {
+          "text": "▁Fri",
+          "start": 14.3,
+          "end": 14.4
+        },
+        {
+          "text": "day",
+          "start": 14.4,
+          "end": 14.6
+        },
+        {
+          "text": ",",
+          "start": 14.6,
+          "end": 14.6
+        },
+        {
+          "text": "▁please",
+          "start": 14.8,
+          "end": 15.0
+        },
+        {
+          "text": ".",
+          "start": 15.0,
+          "end": 15.0
+        }
+      ]
+    }
+  ]
+}

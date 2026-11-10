@@ -1,0 +1,33 @@
+{
+  "description": "Words either side of a natural cut are never merged or deduplicated.",
+  "expected": "Here is this is fine and the the end.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 60000,
+      "overlapBefore": 0,
+      "text": "Here is this",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 70000,
+      "endSample": 120000,
+      "overlapBefore": 0,
+      "text": "is fine and the",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 2,
+      "startSample": 130000,
+      "endSample": 160000,
+      "overlapBefore": 0,
+      "text": "the end.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}

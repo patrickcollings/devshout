@@ -1,0 +1,24 @@
+{
+  "description": "Accents and non-ASCII letters compare case-insensitively.",
+  "expected": "Rendez-vous au café à Zürich, s'il vous plaît. 🎉",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Rendez-vous au CAFÉ à",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "café à Zürich, s'il vous plaît. 🎉",
+      "engine": "whisper-large-v3-turbo",
+      "elapsed": 0.1
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "description": "Timings that lie outside the chunk (relative to the chunk, not the recording) are ignored and the text rule is used.",
+  "expected": "Open the ticket AB-1234 and assign it to me.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Open the ticket AB-1234 and",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Open",
+          "start": 11.0,
+          "end": 11.2
+        },
+        {
+          "text": "the",
+          "start": 11.3,
+          "end": 11.4
+        },
+        {
+          "text": "ticket",
+          "start": 11.5,
+          "end": 11.8
+        },
+        {
+          "text": "AB-1234",
+          "start": 12.0,
+          "end": 12.9
+        },
+        {
+          "text": "and",
+          "start": 13.4,
+          "end": 13.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "AB-1234 and assign it to me.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "AB-1234",
+          "start": 0.0,
+          "end": 0.5
+        },
+        {
+          "text": "and",
+          "start": 0.6,
+          "end": 0.7
+        },
+        {
+          "text": "assign",
+          "start": 0.8,
+          "end": 1.1
+        },
+        {
+          "text": "it",
+          "start": 1.2,
+          "end": 1.3
+        },
+        {
+          "text": "to",
+          "start": 1.35,
+          "end": 1.4
+        },
+        {
+          "text": "me.",
+          "start": 1.45,
+          "end": 1.6
+        }
+      ]
+    }
+  ]
+}

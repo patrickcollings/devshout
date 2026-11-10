@@ -1,0 +1,33 @@
+{
+  "description": "Natural cuts: one space between chunks, whitespace collapsed, casing and punctuation untouched.",
+  "expected": "Right, so the plan is this. We update the My Supply page and ship it on Friday.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 60000,
+      "overlapBefore": 0,
+      "text": "  Right, so the plan\nis this. ",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 70000,
+      "endSample": 130000,
+      "overlapBefore": 0,
+      "text": "We update   the\tMy Supply page",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 2,
+      "startSample": 140000,
+      "endSample": 190000,
+      "overlapBefore": 0,
+      "text": "and ship it on Friday.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}

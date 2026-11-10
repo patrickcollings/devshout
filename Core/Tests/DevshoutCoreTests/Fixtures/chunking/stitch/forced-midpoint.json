@@ -1,0 +1,83 @@
+{
+  "description": "Forced cut with word timings: the previous chunk drops words starting at or after the midpoint (13.71 s), the next drops words starting before it, including the fragment of a word cut in two.",
+  "expected": "We need to update the procurement page today.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "We need to update the procurement",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "We",
+          "start": 12.0,
+          "end": 12.2
+        },
+        {
+          "text": "need",
+          "start": 12.3,
+          "end": 12.5
+        },
+        {
+          "text": "to",
+          "start": 12.6,
+          "end": 12.7
+        },
+        {
+          "text": "update",
+          "start": 12.8,
+          "end": 13.2
+        },
+        {
+          "text": "the",
+          "start": 13.3,
+          "end": 13.4
+        },
+        {
+          "text": "procurement",
+          "start": 13.75,
+          "end": 14.2
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "date the procurement page today.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "date",
+          "start": 13.21,
+          "end": 13.28
+        },
+        {
+          "text": "the",
+          "start": 13.31,
+          "end": 13.4
+        },
+        {
+          "text": "procurement",
+          "start": 13.76,
+          "end": 14.2
+        },
+        {
+          "text": "page",
+          "start": 14.5,
+          "end": 14.7
+        },
+        {
+          "text": "today.",
+          "start": 14.8,
+          "end": 15.1
+        }
+      ]
+    }
+  ]
+}

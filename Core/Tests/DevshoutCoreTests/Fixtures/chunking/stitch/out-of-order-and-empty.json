@@ -1,0 +1,51 @@
+{
+  "description": "Chunks finish out of order; empty and whitespace-only chunks are skipped.",
+  "expected": "First part, second part, third part.",
+  "chunks": [
+    {
+      "index": 2,
+      "startSample": 140000,
+      "endSample": 190000,
+      "overlapBefore": 0,
+      "text": "third part.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 60000,
+      "overlapBefore": 0,
+      "text": "First part,",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 3,
+      "startSample": 200000,
+      "endSample": 230000,
+      "overlapBefore": 0,
+      "text": "   \n ",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 4,
+      "startSample": 240000,
+      "endSample": 260000,
+      "overlapBefore": 0,
+      "text": "",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 70000,
+      "endSample": 130000,
+      "overlapBefore": 0,
+      "text": "second part,",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}
