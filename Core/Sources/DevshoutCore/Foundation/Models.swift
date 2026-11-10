@@ -196,4 +196,6 @@ public enum DeliveryOutcome: Sendable, Hashable {
     case pasted(appName: String?)
     /// Only copied to the clipboard; `reason` says why no paste was sent.
     case copiedOnly(reason: String)
+    /// Nothing reached the clipboard (no text, or the pasteboard refused it). The UI must not offer ⌘V.
+    case failed(reason: String)
 }

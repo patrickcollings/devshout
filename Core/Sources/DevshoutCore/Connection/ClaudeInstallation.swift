@@ -1,27 +1,16 @@
 import Foundation
 
-/// A `claude` binary that was found, and the version it reported (`claude --version`).
-public struct ClaudeInstallation: Sendable, Hashable {
-    public var url: URL
-    public var version: String
-
-    public init(url: URL, version: String) {
-        self.url = url
-        self.version = version
-    }
-
+/// Display helpers for the `ClaudeInstallation` found by `ClaudeLocator`.
+extension ClaudeInstallation {
     /// "Claude Code 2.1.322 (~/.local/bin/claude)" for Settings.
     public func summary(homeDirectory: String) -> String {
         var path = url.path
         if !homeDirectory.isEmpty, path.hasPrefix(homeDirectory + "/") { path = "~" + path.dropFirst(homeDirectory.count) }
-        return displayVersion.isEmpty ? "Claude Code (\(path))" : "Claude Code \(displayVersion) (\(path))"
+        return "Claude Code \(displayVersion) (\(path))"
     }
 
-    /// "2.1.322" from "2.1.322 (Claude Code)".
-    public var displayVersion: String {
-        let words = version.split(whereSeparator: \.isWhitespace)
-        return String(words.first(where: { $0.first?.isNumber == true }) ?? words.first ?? "")
-    }
+    /// "2.1.322".
+    public var displayVersion: String { version.description }
 }
 
 /// A clean-up failure on authentication, remembered against the token it happened with, so a new token

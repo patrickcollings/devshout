@@ -68,7 +68,7 @@ public struct Paster: Deliverer {
     public func deliver(_ text: String) async -> DeliveryOutcome {
         // Never add or keep a trailing newline: nothing should auto-submit in a terminal or chat box.
         let text = PastePreflight.textToDeliver(text)
-        guard !text.isEmpty else { return .copiedOnly(reason: Self.nothingToPasteReason) }
+        guard !text.isEmpty else { return .failed(reason: Self.nothingToPasteReason) }
 
         let copied = await MainActor.run { () -> Bool in
             if PasteboardWriter.copy(text) { return true }
@@ -76,7 +76,7 @@ public struct Paster: Deliverer {
             NSPasteboard.general.clearContents()
             return false
         }
-        guard copied else { return .copiedOnly(reason: Self.clipboardFailedReason) }
+        guard copied else { return .failed(reason: Self.clipboardFailedReason) }
 
         let target = await MainActor.run { () -> (pid: pid_t?, name: String?, isSelf: Bool) in
             let app = NSWorkspace.shared.frontmostApplication
@@ -105,17 +105,9 @@ public struct Paster: Deliverer {
         return .pasted(appName: target.name)
     }
 
-    // `DeliveryOutcome` has no "nothing delivered" case (adding `case failed(reason:)` to Foundation is proposed in
-    // the PR), so these two `.copiedOnly` reasons mean the text is NOT on the clipboard. Check with
-    // `deliveredNothing(_:)` and don't show "Copied: press ⌘V" for them.
+    // Reasons for `.failed`: the text is NOT on the clipboard.
     public static let nothingToPasteReason = "Nothing copied: there was no text"
     public static let clipboardFailedReason = "Nothing copied: the clipboard didn't take the text"
-
-    /// True when `outcome` means the text never reached the clipboard (so the UI mustn't offer ⌘V).
-    public static func deliveredNothing(_ outcome: DeliveryOutcome) -> Bool {
-        guard case let .copiedOnly(reason) = outcome else { return false }
-        return reason == nothingToPasteReason || reason == clipboardFailedReason
-    }
 
     /// Posts ⌘V (key down, key up) at the HID event tap, using the key that types "v" in the current layout.
     @MainActor

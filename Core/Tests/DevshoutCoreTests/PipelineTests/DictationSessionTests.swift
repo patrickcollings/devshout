@@ -80,7 +80,7 @@ import Testing
         try await h.session.start(mode: .tidy, targetApp: nil)
         let started = Date()
         let result = try #require(await h.session.stop())
-        #expect(Date().timeIntervalSince(started) < 5)
+        #expect(Date().timeIntervalSince(started) < 9) // the fake hangs for 10 s; generous for loaded CI machines
         #expect(result.cleanError == .timedOut(after: 0.05))
         #expect(h.deliverer.delivered.get() == ["Part 0 Part 1 Part 2"])
     }

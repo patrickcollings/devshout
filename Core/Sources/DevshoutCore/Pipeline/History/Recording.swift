@@ -73,7 +73,7 @@ public struct CleanVersion: Codable, Sendable, Hashable, Identifiable {
 
 /// `DeliveryOutcome` as stored in `record.json`.
 public struct DeliveryRecord: Codable, Sendable, Hashable {
-    public enum Method: String, Codable, Sendable, Hashable { case pasted, copiedOnly }
+    public enum Method: String, Codable, Sendable, Hashable { case pasted, copiedOnly, failed }
     public var method: Method
     /// The app the text was pasted into (pasted only).
     public var appName: String?
@@ -90,6 +90,10 @@ public struct DeliveryRecord: Codable, Sendable, Hashable {
             method = .copiedOnly
             appName = nil
             self.reason = reason
+        case .failed(let reason):
+            method = .failed
+            appName = nil
+            self.reason = reason
         }
     }
 
@@ -97,6 +101,7 @@ public struct DeliveryRecord: Codable, Sendable, Hashable {
         switch method {
         case .pasted: .pasted(appName: appName)
         case .copiedOnly: .copiedOnly(reason: reason ?? "")
+        case .failed: .failed(reason: reason ?? "")
         }
     }
 }

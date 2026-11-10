@@ -14,7 +14,7 @@ import Foundation
 @MainActor
 public final class ClaudeConnection: ObservableObject {
     /// Finds `claude` and asks its version (built elsewhere: ClaudeLocator). Nil when it isn't installed.
-    public typealias Locate = () async -> (url: URL, version: String)?
+    public typealias Locate = () async -> ClaudeInstallation?
 
     @Published public private(set) var state: ConnectionState = .checking
     /// The binary found by the last `refresh()`.
@@ -55,7 +55,7 @@ public final class ClaudeConnection: ObservableObject {
         }
         let task = Task { @MainActor in
             let found = await self.locate()
-            self.installation = found.map { ClaudeInstallation(url: $0.url, version: $0.version) }
+            self.installation = found
             self.recheckExpiry()
         }
         refreshing = task

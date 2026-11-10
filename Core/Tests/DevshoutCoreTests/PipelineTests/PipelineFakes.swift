@@ -152,8 +152,10 @@ final class FakeCleaner: TextCleaner, @unchecked Sendable {
     static func hanging() -> FakeCleaner {
         FakeCleaner { raw, mode, _ in
             // Ignores cancellation on purpose: the session mustn't wait for it.
-            let deadline = Date().addingTimeInterval(10)
-            while Date() < deadline { try? await Task.sleep(nanoseconds: 20_000_000) }
+            // A dispatch timer, not Task.sleep: after cancellation Task.sleep throws at once, which would spin.
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
+            }
             return CleanResult(text: "too late", model: mode.claudeModel, elapsed: 10)
         }
     }

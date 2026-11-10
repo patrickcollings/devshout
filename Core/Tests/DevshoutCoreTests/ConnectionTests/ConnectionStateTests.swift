@@ -281,10 +281,10 @@ import Testing
 
 @Suite struct ClaudeInstallationTests {
     @Test func summary() {
-        let i = ClaudeInstallation(url: URL(fileURLWithPath: "/Users/patrick/.local/bin/claude"), version: "2.1.322 (Claude Code)\n")
+        let i = ClaudeInstallation(url: URL(fileURLWithPath: "/Users/patrick/.local/bin/claude"), version: ClaudeVersion(2, 1, 322))
         #expect(i.summary(homeDirectory: "/Users/patrick") == "Claude Code 2.1.322 (~/.local/bin/claude)")
-        #expect(ClaudeInstallation(url: URL(fileURLWithPath: "/opt/homebrew/bin/claude"), version: "").summary(homeDirectory: "/Users/patrick")
-            == "Claude Code (/opt/homebrew/bin/claude)")
+        #expect(ClaudeInstallation(url: URL(fileURLWithPath: "/opt/homebrew/bin/claude"), version: ClaudeVersion(2, 1, 0))
+            .summary(homeDirectory: "/Users/patrick") == "Claude Code 2.1.0 (/opt/homebrew/bin/claude)")
     }
 
     @Test func authFailureBelongsToOneToken() throws {
