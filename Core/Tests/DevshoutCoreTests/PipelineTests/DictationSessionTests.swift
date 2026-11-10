@@ -46,7 +46,8 @@ import Testing
         #expect(saved.timings.total != nil)
         #expect(saved.fallbackReason == nil)
         #expect(h.history.audioURL(for: id) != nil)
-        #expect(h.recorder.startedURL.get() == h.history.audioURL(for: id))
+        // Compare resolved paths: on macOS the temporary folder is reached through the /var → /private/var symlink.
+        #expect(h.recorder.startedURL.get()?.resolvingSymlinksInPath() == h.history.audioURL(for: id)?.resolvingSymlinksInPath())
     }
 
     @Test func claudeTimeoutPastesRawAndRecordsWhy() async throws {
