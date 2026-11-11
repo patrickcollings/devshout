@@ -18,6 +18,8 @@ struct RecordingPill: View {
 
     static let width: CGFloat = 300
     static let lineHeight: CGFloat = 44
+    static let chipNameWidthRecording: CGFloat = 80
+    static let chipNameWidth: CGFloat = 54
 
     private var showsControls: Bool { model.phase.isRecording && (model.isHovering || isHoveringLocally) }
 
@@ -25,7 +27,11 @@ struct RecordingPill: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 PhaseIndicator(phase: model.phase)
-                ModeChip(mode: model.mode, compact: true)
+                // The built-in names always fit. A longer custom name is cut to what the line has room for: beside
+                // the waveform and timer while recording, and to the width of "Structure" once the line carries
+                // text ("Rewriting with Sonnet…", "Pasted into Slack").
+                ModeChip(mode: model.modeDescriptor, compact: true,
+                         nameWidth: model.phase.isRecording ? Self.chipNameWidthRecording : Self.chipNameWidth)
                 centre
                     .frame(maxWidth: .infinity, alignment: .leading)
                 trailing
@@ -209,6 +215,10 @@ private struct PillBackground: View {
         RecordingPill(model: PreviewData.pill(.recording, mode: .structure))
         RecordingPill(model: PreviewData.pill(.recording, mode: .tidy,
                                               liveText: "so the idea is that the CORSIA flag on AB-1234 should only show when"))
+        RecordingPill(model: PreviewData.pill(.recording, mode: PreviewData.customModes[1].id))
+        RecordingPill(model: PreviewData.pill(.recording, mode: PreviewData.customModes[0].id,
+                                              liveText: "a long mode name is cut short so the timer and waveform keep their room"))
+        RecordingPill(model: PreviewData.pill(.cleaning(model: "sonnet"), mode: PreviewData.customModes[0].id))
         RecordingPill(model: PreviewData.pill(.transcribing(remaining: 4)))
         RecordingPill(model: PreviewData.pill(.cleaning(model: "haiku")))
         RecordingPill(model: PreviewData.pill(.done(.pasted(appName: "Slack"))))

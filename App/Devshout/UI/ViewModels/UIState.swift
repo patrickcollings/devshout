@@ -92,11 +92,34 @@ struct HotkeyDisplay: Hashable, Sendable {
     static let optionCommandSpace = HotkeyDisplay(modifiers: [.option, .command], key: "Space")
 }
 
-/// The dictation hotkeys of PLAN §7.6.
-enum HotkeySlot: String, CaseIterable, Identifiable, Hashable, Sendable {
+/// The dictation hotkeys of PLAN §7.6, plus one for each mode the user made.
+enum HotkeySlot: Identifiable, Hashable, Sendable {
     case appDefault, tidy, structure, raw
+    /// A custom mode's own hotkey. Not set until the user records one.
+    case custom(ModeID)
 
-    var id: String { rawValue }
+    /// The slots that always exist.
+    static let builtIns: [HotkeySlot] = [.appDefault, .tidy, .structure, .raw]
+
+    /// The slot of a mode's own hotkey.
+    init(mode: ModeID) {
+        switch mode {
+        case .tidy: self = .tidy
+        case .structure: self = .structure
+        case .raw: self = .raw
+        default: self = .custom(mode)
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .appDefault: "appDefault"
+        case .tidy: "tidy"
+        case .structure: "structure"
+        case .raw: "raw"
+        case .custom(let mode): mode.rawValue
+        }
+    }
 
     /// The mode this hotkey forces, or nil for "the app's default mode".
     var mode: ModeID? {
@@ -105,6 +128,7 @@ enum HotkeySlot: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .tidy: .tidy
         case .structure: .structure
         case .raw: .raw
+        case .custom(let mode): mode
         }
     }
 
@@ -114,6 +138,7 @@ enum HotkeySlot: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .tidy: "Dictate in Tidy"
         case .structure: "Dictate in Structure"
         case .raw: "Dictate in Raw"
+        case .custom: "Dictate in this mode"
         }
     }
 
@@ -122,7 +147,7 @@ enum HotkeySlot: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .appDefault: .optionSpace
         case .structure: .optionShiftSpace
         case .raw: .optionCommandSpace
-        case .tidy: nil
+        case .tidy, .custom: nil
         }
     }
 }
@@ -510,9 +535,9 @@ enum HistoryPlayback: Hashable, Sendable {
 /// A recording's transcript being sent to Claude again from History ("Re-run").
 enum HistoryRerunState: Hashable, Sendable {
     /// `model` is the `ModeConfig.claudeModel` value ("haiku").
-    case running(mode: ModeID, model: String)
+    case running(mode: ModeDescriptor, model: String)
     /// `message` is ready to show ("Claude isn't connected. …").
-    case failed(mode: ModeID, message: String)
+    case failed(mode: ModeDescriptor, message: String)
 }
 
 /// What "Add correction…" did, shown in the detail pane of the recording it was made from.
