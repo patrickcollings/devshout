@@ -116,6 +116,26 @@ public actor SileroVAD: VoiceActivityDetector {
         }
     }
 
+    /// A chunk planner for one recording, fed by this detector while the recording goes on (the app's dictations,
+    /// and `devshout-cli dictate-file`). Only one recording may use the detector at a time.
+    ///
+    /// If the model isn't loaded when the recording's first audio arrives (it couldn't be downloaded yet, say), the
+    /// recording is planned without it, so that it never waits for a download: every frame counts as speech, which
+    /// gives fixed-length chunks with overlaps and loses nothing. The model is then fetched for next time.
+    ///
+    /// - Parameter defersUntilFinish: see `VADChunkPlanner`: transcribe after stop instead of while recording.
+    public nonisolated func chunkPlanner(maxChunkDuration: TimeInterval,
+                                         defersUntilFinish: Bool = false) -> VADChunkPlanner {
+        VADChunkPlanner(maxChunkDuration: maxChunkDuration, frameSize: frameSize,
+                        defersUntilFinish: defersUntilFinish) {
+            guard await self.isReady else {
+                Task.detached(priority: .utility) { try? await self.prepare() }
+                return nil
+            }
+            return VADChunkPlanner.Detector(vad: self, remainder: { try await self.processRemainder() })
+        }
+    }
+
     nonisolated static func modelProgress(from download: DownloadProgress) -> ModelProgress {
         if case .compiling = download.phase {
             return ModelProgress(phase: .compiling, fraction: download.fractionCompleted)
