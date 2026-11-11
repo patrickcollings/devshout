@@ -7,12 +7,13 @@ Tick what works, and note anything odd next to the item (timings especially). Ge
 "First run" section.
 
 **What v0.1 does:** menu bar app, onboarding, ⌥Space (and the other mode hotkeys) to dictate, tap to toggle or hold
-to talk, Esc to cancel, the whole recording transcribed after you stop (Parakeet or Whisper), glossary fixes, Tidy or
-Structure through `claude -p` with a raw fallback, paste with ⌘V and leave the text on the clipboard, a recording
-pill, history on disk (no History window yet), Settings.
+to talk, Esc to cancel, the recording transcribed while you talk (Parakeet or Whisper) so that only the last few
+seconds are left when you stop, glossary fixes, Tidy or Structure through `claude -p` with a raw fallback, paste with
+⌘V and leave the text on the clipboard, a recording pill with a live transcript line, history on disk (no History
+window yet), Settings.
 
-**Not in v0.1 (don't test):** transcribing while recording and the live transcript line, the History window, re-runs,
-"Add correction", Claude pre-warm, team glossary sync, DMG/updates.
+**Not in v0.1 (don't test):** the History window, re-runs, "Add correction", Claude pre-warm, team glossary sync,
+DMG/updates.
 
 Useful places:
 - App data: `~/Library/Application Support/devshout/` (`settings.json`, `glossary.md`, `Recordings/YYYY/MM/<id>/`
@@ -87,6 +88,15 @@ Useful places:
 - [ ] Menu → Start Dictation / Stop Dictation / Cancel Dictation work like the hotkey
 - [ ] **A 5-minute ramble in Structure:** note the time from stop to paste (Parakeet), and check the brief keeps every
       point
+- [ ] **Transcribing while you talk:** dictate for a minute or two with natural pauses (Whisper shows it best). A
+      line of your latest words appears under the pill a few seconds after a pause, or after about 15 s (Parakeet)
+      or 28 s (Whisper) of unbroken talking, and keeps moving on; the waveform and the timer stay smooth meanwhile
+- [ ] Stop after that long dictation: the pill says "Transcribing the last N s…" and the text is pasted about as
+      fast as after a 10-second dictation (`record.json` → `timings.transcription` is the wait in seconds)
+- [ ] Settings → General → "Show the live transcript under the recording pill" off: no line under the pill while
+      recording, and the dictation is otherwise the same
+- [ ] **Esc** in the middle of a long dictation (after the live line has appeared): the pill goes at once, nothing is
+      pasted, the fans don't keep going, and the next dictation starts and transcribes normally
 - [ ] Silence only (start, say nothing, stop) → "No speech detected"; nothing is pasted, and history keeps the audio
 - [ ] Both engines: switch to Whisper in Settings → Transcription (download it), dictate → `record.json` says
       `whisper-large-v3-turbo`; switch back

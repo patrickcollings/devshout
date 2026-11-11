@@ -3,7 +3,8 @@
 // its states into the recording pill and the menu bar icon.
 //
 // The session transcribes while it records (Silero VAD + ChunkPlanner cut the audio at pauses as it arrives), so
-// after stop only the tail is left. While a dictation is still finishing, new triggers are ignored (nothing is
+// after stop only the tail is left. Its progress gives the pill the live transcript while recording and what is
+// left to transcribe after stop. While a dictation is still finishing, new triggers are ignored (nothing is
 // queued) and the pill says so.
 
 import AppKit
@@ -231,6 +232,13 @@ final class DictationController {
                 self.apply(state)
             }
         }
+        // And its transcription progress: the live transcript, then what is left after stop.
+        Task {
+            for await progress in session.progress {
+                guard self.token == token else { return }
+                self.apply(progress)
+            }
+        }
 
         startTask = Task {
             do {
@@ -328,6 +336,21 @@ final class DictationController {
             setReturnKeyEnabled(true)
         case .delivering, .finished, .cancelled, .failed:
             setReturnKeyEnabled(false)
+        }
+    }
+
+    /// Characters of the live transcript that fit the pill's second line (longer text is cut at the front).
+    private static let liveTextCharacters = 48
+
+    private func apply(_ progress: TranscriptionProgress) {
+        // The engine's raw words for the chunks done so far: show the most recent ones.
+        if pill.showsLiveText {
+            let latest = progress.latestText(characters: Self.liveTextCharacters)
+            pill.liveText = latest.isEmpty ? nil : latest
+        }
+        // After stop: how much audio is still to be transcribed, once the last chunk has been cut.
+        if case .transcribing = pill.phase {
+            pill.phase = .transcribing(remaining: progress.planningComplete ? progress.pendingAudio : nil)
         }
     }
 
