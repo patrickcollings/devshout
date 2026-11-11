@@ -57,8 +57,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
     public var engine: EngineID
     /// The mode used by the generic hotkey when the frontmost app has no per-app mode.
     public var defaultMode: ModeID
-    /// Per-mode Claude settings. Always contains every `ModeID` after decoding.
+    /// Claude settings of the built-in modes. Always contains every built-in `ModeID` after decoding.
     public var modes: [ModeID: ModeConfig]
+    /// The modes the user made (Settings → Modes), in the order they are listed. Their ids are unique.
+    public var customModes: [CustomMode]
     /// Bundle identifier → mode, for the generic hotkey.
     public var perAppModes: [String: ModeID]
     public var hotkeyBehaviour: HotkeyBehaviour
@@ -79,6 +81,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         engine: EngineID = .parakeetV3,
         defaultMode: ModeID = .tidy,
         modes: [ModeID: ModeConfig] = ModeConfig.defaults,
+        customModes: [CustomMode] = [],
         perAppModes: [String: ModeID] = [:],
         hotkeyBehaviour: HotkeyBehaviour = .tapToggleHoldToTalk,
         pasteMethod: PasteMethod = .commandV,
@@ -93,6 +96,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.engine = engine
         self.defaultMode = defaultMode
         self.modes = modes
+        self.customModes = customModes
         self.perAppModes = perAppModes
         self.hotkeyBehaviour = hotkeyBehaviour
         self.pasteMethod = pasteMethod
@@ -106,10 +110,16 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     public static let defaults = AppSettings()
 
-    /// The config for a mode, falling back to the built-in default. Its timeout is always usable
-    /// (`ModeConfig.effectiveTimeout`), however the settings were made.
+    /// The config for a mode: a custom mode's own, else the built-in's, falling back to the built-in default. Its
+    /// timeout is always usable (`ModeConfig.effectiveTimeout`), however the settings were made. A custom mode that
+    /// no longer exists gets a config with no instructions, which the cleaner refuses (the raw text is pasted).
     public func config(for mode: ModeID) -> ModeConfig {
-        var config = modes[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "", timeout: 0)
+        var config: ModeConfig
+        if mode.isBuiltIn {
+            config = modes[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "", timeout: 0)
+        } else {
+            config = customMode(mode)?.config ?? ModeConfig(id: mode, claudeModel: "", timeout: 0)
+        }
         config.timeout = config.effectiveTimeout
         return config
     }
@@ -130,7 +140,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
     // MARK: Codable
 
     enum CodingKeys: String, CodingKey {
-        case version, engine, defaultMode, modes, perAppModes, hotkeyBehaviour, pasteMethod, soundsEnabled,
+        case version, engine, defaultMode, modes, customModes, perAppModes, hotkeyBehaviour, pasteMethod, soundsEnabled,
              showLivePreview, audioRetentionDays, claudePathOverride, inputDeviceUID, applyGlossaryFixes
     }
 
@@ -161,7 +171,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         var modes = ModeConfig.defaults
         if let stored = c.lenient([String: PartialModeConfig].self, .modes) {
             for (key, partial) in stored {
-                guard let id = ModeID(rawValue: key) else { continue }
+                // Built-ins only: a custom mode keeps its model and timeout in `customModes`.
+                guard let id = ModeID(rawValue: key), id.isBuiltIn else { continue }
                 modes[id] = partial.merged(over: modes[id] ?? ModeConfig(id: id, claudeModel: "", timeout: 0))
             }
         }
@@ -174,6 +185,16 @@ public struct AppSettings: Codable, Sendable, Hashable {
             }
         }
         perAppModes = perApp
+
+        // Missing in files from before custom modes. A damaged entry is skipped, and so is a repeated id.
+        var custom: [CustomMode] = []
+        for entry in c.lenient([LenientValue<CustomMode>].self, .customModes) ?? [] {
+            guard let mode = entry.value, !custom.contains(where: { $0.id == mode.id }) else { continue }
+            custom.append(mode)
+        }
+        customModes = custom
+        // A default or per-app mode that names a custom mode which isn't there falls back, as an unknown name does.
+        dropReferencesToMissingModes()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -184,6 +205,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         // Keyed by the mode's raw value so the file reads as a JSON object.
         let modesByName = Dictionary(uniqueKeysWithValues: modes.map { ($0.key.rawValue, $0.value) })
         try c.encode(modesByName, forKey: .modes)
+        try c.encode(customModes, forKey: .customModes)
         try c.encode(perAppModes.mapValues(\.rawValue), forKey: .perAppModes)
         try c.encode(hotkeyBehaviour, forKey: .hotkeyBehaviour)
         try c.encode(pasteMethod, forKey: .pasteMethod)

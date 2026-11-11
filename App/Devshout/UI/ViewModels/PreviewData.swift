@@ -52,6 +52,45 @@ enum PreviewData {
         .structure: "The transcript is someone talking through instructions for an AI coding agent. Rewrite it as a clear, well-ordered written brief that the agent can act on. Every point must appear in your output: drop none, invent none.",
     ]
 
+    /// Two of the user's own modes: one with the longest name a mode can have, one from a template.
+    static let customModes: [CustomMode] = [
+        CustomModeTemplate.codingAgentPrompt.makeMode(name: "Prompt for a coding agent, with tests"),
+        CustomModeTemplate.slackMessage.makeMode(),
+    ]
+
+    static let modeDescriptors: [ModeDescriptor] = ModeDescriptor.builtIns + customModes.map(ModeDescriptor.init)
+
+    static func modes(selected: ModeID) -> ModesSettingsViewModel {
+        let model = ModesSettingsViewModel(customModes: customModes, defaultInstructions: defaultInstructions)
+        model.selectedMode = selected
+        return model
+    }
+
+    /// A dictation made in a custom mode that still exists, and one whose mode has since been deleted.
+    static let customModeRecordings: [Recording] = {
+        let now = Date()
+        let slack = customModes[1]
+        let deleted = ModeID.custom()
+        return [
+            Recording(id: UUID(), createdAt: now.addingTimeInterval(-120), duration: 9, mode: slack.id,
+                      modeName: slack.name, engine: .parakeetV3,
+                      rawText: "tell sam the import is fixed and a b 1234 can be closed",
+                      versions: [CleanVersion(mode: slack.id, modeName: slack.name, model: "haiku",
+                                              text: "Sam, the import is fixed, so AB-1234 can be closed.",
+                                              elapsed: 1.2, createdAt: now.addingTimeInterval(-118))],
+                      deliveredText: "Sam, the import is fixed, so AB-1234 can be closed.",
+                      delivered: DeliveryRecord(.pasted(appName: "Slack")), timings: RecordingTimings(total: 1.9)),
+            Recording(id: UUID(), createdAt: now.addingTimeInterval(-900), duration: 14, mode: deleted,
+                      modeName: "Meeting notes", engine: .parakeetV3,
+                      rawText: "we agreed to ship the corsia change on tuesday",
+                      versions: [CleanVersion(mode: deleted, modeName: "Meeting notes", model: "sonnet",
+                                              text: "- Ship the CORSIA change on Tuesday.",
+                                              elapsed: 2.6, createdAt: now.addingTimeInterval(-897))],
+                      deliveredText: "- Ship the CORSIA change on Tuesday.",
+                      delivered: DeliveryRecord(.pasted(appName: "Notes")), timings: RecordingTimings(total: 3.3)),
+        ]
+    }()
+
     static let glossaryText = """
     # Abatable glossary
 
@@ -157,6 +196,7 @@ enum PreviewData {
 
     static func pill(_ phase: PillPhase, mode: ModeID = .tidy, liveText: String? = nil) -> RecordingPillViewModel {
         let model = RecordingPillViewModel(levels: AudioLevelViewModel(history: levelHistory))
+        model.modes = modeDescriptors
         model.mode = mode
         model.phase = phase
         model.startedAt = Date().addingTimeInterval(-192)

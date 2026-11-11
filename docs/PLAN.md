@@ -357,6 +357,8 @@ Shared preamble (every mode):
 
 **Raw:** Claude is not called.
 
+**Custom modes (added after v0.2).** Besides Raw, Tidy and Structure, the user can make modes of their own in Settings → Modes (name, instructions, model, timeout, hotkey, symbol and colour), blank or from a template (prompt for a coding agent, Slack message, commit message, email). `ModeID` is a string wrapper with the three built-ins as constants and `custom-<uuid>` for the rest; the definitions are in `settings.json` under `customModes`. A custom mode's instructions never form the whole prompt: `PromptBuilder` puts them in a `<mode_instructions>` block inside the same frame as the built-ins (the transcript is data, British English, the glossary, output only the text) and restates the rules after them. Checks: no length check (a commit message is rightly much shorter than its dictation), the coverage warning as for Structure, and an empty result still pastes the raw text.
+
 ### 5.3 Connecting a Claude account: what the docs say (checked 2026-11-10)
 
 From [Authentication](https://code.claude.com/docs/en/authentication), [CLI reference](https://code.claude.com/docs/en/cli-reference) and [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance):

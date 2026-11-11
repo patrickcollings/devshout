@@ -37,7 +37,8 @@ struct HistorySettingsTab: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             List(visible, selection: $model.selection) { recording in
-                                HistoryRow(recording: recording).tag(recording.id)
+                                HistoryRow(recording: recording, mode: model.descriptor(for: recording))
+                                    .tag(recording.id)
                             }
                         }
                     }
@@ -102,6 +103,8 @@ private struct HistorySearchField: View {
 
 private struct HistoryRow: View {
     let recording: Recording
+    /// The recording's mode as it should be shown (a deleted custom mode by its stored name).
+    let mode: ModeDescriptor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -109,10 +112,25 @@ private struct HistoryRow: View {
                 Text("\(UIFormat.day(recording.createdAt)), \(UIFormat.time(recording.createdAt))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                // The mode's symbol and name; a long name gives way to the date and the status.
+                HStack(spacing: 3) {
+                    Image(systemName: mode.symbolName)
+                        .imageScale(.small)
+                    Text(mode.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.caption)
+                .foregroundStyle(mode.color)
+                .help(mode.name)
                 Spacer(minLength: 0)
                 if recording.status != .completed {
                     Text(recording.status.displayName)
                         .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .layoutPriority(1)
                         .foregroundStyle(recording.status == .failed ? Color.red : Color.orange)
                 }
             }
@@ -131,10 +149,10 @@ private struct HistoryDetail: View {
     @Binding var confirmingDelete: Bool
 
     var body: some View {
-        let sections = HistoryText.sections(for: recording)
+        let sections = HistoryText.sections(for: recording, modes: model.modes)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                ModeChip(mode: recording.mode, compact: true)
+                ModeChip(mode: model.descriptor(for: recording), compact: true)
                 Text(HistoryText.facts(for: recording))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -214,11 +232,11 @@ private struct HistoryActionBar: View {
 
     private var rerunMenu: some View {
         Menu {
-            ForEach(HistoryViewModel.rerunModes, id: \.self) { mode in
+            ForEach(model.rerunModes) { mode in
                 Button {
-                    model.rerun(recording.id, mode: mode)
+                    model.rerun(recording.id, mode: mode.id)
                 } label: {
-                    Label(mode.displayName, systemImage: mode.symbolName)
+                    Label(mode.name, systemImage: mode.symbolName)
                 }
             }
         } label: {
@@ -473,6 +491,13 @@ private struct HistoryTextBlock: View {
 #Preview("History: audio file missing") {
     let model = HistoryViewModel(recordings: PreviewData.recordings)
     model.playbackUnavailable(PreviewData.recordings[0].id, message: HistoryText.audioMissing)
+    return HistorySettingsTab(model: model)
+}
+
+#Preview("History: custom and deleted modes") {
+    // "Slack message" still exists; the recording below it was made in a mode that has since been deleted.
+    let model = HistoryViewModel(recordings: PreviewData.customModeRecordings + PreviewData.recordings)
+    model.modes = PreviewData.modeDescriptors
     return HistorySettingsTab(model: model)
 }
 

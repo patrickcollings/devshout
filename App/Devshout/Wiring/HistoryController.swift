@@ -98,7 +98,11 @@ final class HistoryController {
     /// pasted or copied.
     func rerun(_ id: UUID, mode: ModeID) {
         guard rerunTasks[id] == nil, mode.usesClaude else { return }
-        let config = settings().config(for: mode)
+        let current = settings()
+        let config = current.config(for: mode)
+        // For the messages, and for the version's own record of a custom mode's name.
+        let descriptor = current.descriptor(for: mode)
+        let modeName = current.storedName(for: mode)
         let cleaner = claude.cleaner
         let glossaryText = glossary.forClaude
         let history = history
@@ -116,7 +120,7 @@ final class HistoryController {
                     if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         throw CleanError.rejectedOutput(reason: "empty output")
                     }
-                    let version = CleanVersion(result, mode: mode, createdAt: Date())
+                    let version = CleanVersion(result, mode: mode, modeName: modeName, createdAt: Date())
                     let updated = try await Task.detached(priority: .userInitiated) {
                         try history.appendVersion(version, to: id)
                     }.value
@@ -125,17 +129,17 @@ final class HistoryController {
                     self.onChange()
                     return
                 }
-                failure = HistoryText.rerunNothingToSend(mode: mode)
+                failure = HistoryText.rerunNothingToSend(mode: descriptor)
             } catch let error as CleanError {
                 // A cancelled run comes back as a failed process: that isn't a failure to report.
                 if !Task.isCancelled {
                     self.claude.handle(error)
-                    failure = HistoryText.rerunFailed(mode: mode, error)
+                    failure = HistoryText.rerunFailed(mode: descriptor, error)
                 }
             } catch is CancellationError {
                 failure = nil
             } catch {
-                failure = HistoryText.rerunNotSaved(mode: mode, detail: ErrorText.describe(error))
+                failure = HistoryText.rerunNotSaved(mode: descriptor, detail: ErrorText.describe(error))
             }
             self.rerunTasks[id] = nil
             if let failure {

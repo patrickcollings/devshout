@@ -31,8 +31,8 @@ struct MenuBarContent: View {
         Divider()
 
         Picker(selection: $model.defaultMode) {
-            ForEach(ModeID.allCases, id: \.self) { mode in
-                Text(mode.displayName).tag(mode)
+            ForEach(model.modes) { mode in
+                Text(mode.name).tag(mode.id)
             }
         } label: {
             Text("Default Mode")

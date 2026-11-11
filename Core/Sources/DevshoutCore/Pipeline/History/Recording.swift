@@ -35,16 +35,20 @@ public struct TargetApp: Codable, Sendable, Hashable {
 public struct CleanVersion: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
     public var mode: ModeID
+    /// The name of `mode` when this was made, kept for custom modes only so the version can still be labelled
+    /// after the mode is deleted. Nil for the built-ins.
+    public var modeName: String?
     public var model: String
     public var text: String
     public var elapsed: TimeInterval
     public var warnings: [String]
     public var createdAt: Date
 
-    public init(id: UUID = UUID(), mode: ModeID, model: String, text: String, elapsed: TimeInterval,
-                warnings: [String] = [], createdAt: Date) {
+    public init(id: UUID = UUID(), mode: ModeID, modeName: String? = nil, model: String, text: String,
+                elapsed: TimeInterval, warnings: [String] = [], createdAt: Date) {
         self.id = id
         self.mode = mode
+        self.modeName = modeName
         self.model = model
         self.text = text
         self.elapsed = elapsed
@@ -52,17 +56,18 @@ public struct CleanVersion: Codable, Sendable, Hashable, Identifiable {
         self.createdAt = createdAt
     }
 
-    public init(_ result: CleanResult, mode: ModeID, createdAt: Date) {
-        self.init(mode: mode, model: result.model, text: result.text, elapsed: result.elapsed,
+    public init(_ result: CleanResult, mode: ModeID, modeName: String? = nil, createdAt: Date) {
+        self.init(mode: mode, modeName: modeName, model: result.model, text: result.text, elapsed: result.elapsed,
                   warnings: result.warnings, createdAt: createdAt)
     }
 
-    enum CodingKeys: String, CodingKey { case id, mode, model, text, elapsed, warnings, createdAt }
+    enum CodingKeys: String, CodingKey { case id, mode, modeName, model, text, elapsed, warnings, createdAt }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = c.lenient(UUID.self, .id) ?? UUID()
         mode = c.lenient(ModeID.self, .mode) ?? .tidy
+        modeName = c.lenient(String.self, .modeName)
         model = c.lenient(String.self, .model) ?? ""
         text = try c.decode(String.self, forKey: .text)
         elapsed = c.lenient(TimeInterval.self, .elapsed) ?? 0
@@ -133,6 +138,9 @@ public struct Recording: Codable, Sendable, Hashable, Identifiable {
     public var status: RecordingStatus
     /// The mode the dictation finished in (after any switch while recording).
     public var mode: ModeID
+    /// The name of `mode` at the time, kept for custom modes only (`AppSettings.storedName(for:)`): History shows
+    /// it once the mode has been deleted. Nil for the built-ins and in records from before custom modes.
+    public var modeName: String?
     public var targetApp: TargetApp?
     public var engine: EngineID?
     /// The stitched engine output, before glossary fixes.
@@ -153,7 +161,8 @@ public struct Recording: Codable, Sendable, Hashable, Identifiable {
     public var audioDeletedAt: Date?
 
     public init(id: UUID, createdAt: Date, duration: TimeInterval = 0, status: RecordingStatus = .completed,
-                mode: ModeID = .tidy, targetApp: TargetApp? = nil, engine: EngineID? = nil,
+                mode: ModeID = .tidy, modeName: String? = nil, targetApp: TargetApp? = nil,
+                engine: EngineID? = nil,
                 rawText: String? = nil, fixedText: String? = nil, fixesApplied: Bool = false,
                 versions: [CleanVersion] = [], deliveredText: String? = nil, delivered: DeliveryRecord? = nil,
                 fallbackReason: String? = nil, timings: RecordingTimings = RecordingTimings(),
@@ -163,6 +172,7 @@ public struct Recording: Codable, Sendable, Hashable, Identifiable {
         self.duration = duration
         self.status = status
         self.mode = mode
+        self.modeName = modeName
         self.targetApp = targetApp
         self.engine = engine
         self.rawText = rawText
@@ -189,7 +199,7 @@ public struct Recording: Codable, Sendable, Hashable, Identifiable {
     // MARK: Codable (tolerant: history must always list, even with old or damaged records)
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, duration, status, mode, targetApp, engine, rawText, fixedText, fixesApplied, versions,
+        case id, createdAt, duration, status, mode, modeName, targetApp, engine, rawText, fixedText, fixesApplied, versions,
              deliveredText, delivered, fallbackReason, timings, errorMessage, audioDeletedAt
     }
 
@@ -200,6 +210,7 @@ public struct Recording: Codable, Sendable, Hashable, Identifiable {
         duration = c.lenient(TimeInterval.self, .duration) ?? 0
         status = c.lenient(RecordingStatus.self, .status) ?? .failed
         mode = c.lenient(ModeID.self, .mode) ?? .tidy
+        modeName = c.lenient(String.self, .modeName)
         targetApp = c.lenient(TargetApp.self, .targetApp)
         engine = c.lenient(EngineID.self, .engine)
         rawText = c.lenient(String.self, .rawText)

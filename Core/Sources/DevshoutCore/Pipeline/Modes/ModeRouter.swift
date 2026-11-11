@@ -19,21 +19,25 @@ public enum HotkeyActionWhileRecording: Sendable, Hashable {
 /// Picks the mode for a dictation. Pure.
 public enum ModeRouter {
     /// A mode hotkey gives that mode. The generic hotkey gives the frontmost app's per-app mode, else
-    /// `settings.defaultMode`.
+    /// `settings.defaultMode`. A custom mode that is no longer in the settings is never returned: a per-app rule
+    /// for one is skipped, and anything else falls back to the default mode, or to Tidy if that is gone too.
     public static func resolve(trigger: HotkeyTrigger, frontmostBundleID: String?, settings: AppSettings) -> ModeID {
+        let fallback = settings.hasMode(settings.defaultMode) ? settings.defaultMode : AppSettings.fallbackMode
         switch trigger {
         case .mode(let mode):
-            return mode
+            return settings.hasMode(mode) ? mode : fallback
         case .defaultForApp:
-            if let bundleID = frontmostBundleID, let mode = settings.perAppModes[bundleID] {
+            if let bundleID = frontmostBundleID, let mode = settings.perAppModes[bundleID], settings.hasMode(mode) {
                 return mode
             }
             if let bundleID = frontmostBundleID,
-               let match = settings.perAppModes.first(where: { $0.key.caseInsensitiveCompare(bundleID) == .orderedSame }) {
+               let match = settings.perAppModes.first(where: {
+                   $0.key.caseInsensitiveCompare(bundleID) == .orderedSame && settings.hasMode($0.value)
+               }) {
                 // Bundle IDs are case-insensitive on macOS; exact matches win above.
                 return match.value
             }
-            return settings.defaultMode
+            return fallback
         }
     }
 
