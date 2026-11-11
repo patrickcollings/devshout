@@ -224,6 +224,163 @@ extension ClaudeTestStatus {
     }
 }
 
+// MARK: - Voice calibration
+
+/// The wording of "Calibrate your voice". The recommendation sentence itself comes from Core
+/// (`CalibrationRecommendation.summary`), so `devshout-cli calibrate` prints the same words.
+enum CalibrationCopy {
+    static let windowTitle = "Calibrate Your Voice"
+    static let openButton = "Calibrate Your Voice…"
+
+    // Settings → Transcription
+    static let settingsExplanation = "Read ten short sentences aloud and devshout measures how well each speech model understands you, recommends the better one, and learns the words it keeps getting wrong."
+
+    /// "Last calibrated 10 Nov 2026: Whisper 96%, Parakeet 89%"
+    static func lastResult(_ result: CalibrationLastResult) -> String {
+        let scores = result.accuracySummary.isEmpty ? "" : ": \(result.accuracySummary)"
+        return "Last calibrated \(UIFormat.day(result.date))\(scores)"
+    }
+
+    // Onboarding → Try it
+    static let onboardingOffer = "Not quite getting your voice? Calibrating takes about three minutes, and you can do it any time from Settings → Transcription."
+
+    // Introduction
+    static let introTitle = "Calibrate your voice"
+    static let introMessage = "Dictation works better for some voices and accents than others. Read a short script aloud and devshout will measure how well it understands you."
+    static let introSteps = [
+        "Read ten sentences, one at a time. It takes two to three minutes.",
+        "Each speech model transcribes your recordings and is scored against what you read.",
+        "You see which model understood you better, and which of your glossary terms it mishears, so they can be fixed from now on.",
+    ]
+    static let introPrivacy = "The recordings stay on this Mac."
+    static let beginButton = "Start"
+
+    /// Which models will be measured, or why none can be.
+    static func introEngines(ready: [EngineID], missing: [EngineID]) -> (text: String, tone: StatusTone) {
+        if ready.isEmpty {
+            return ("No speech model is ready yet. Download one in Settings → Transcription first.", .warning)
+        }
+        if let other = missing.first, ready.count == 1 {
+            return ("Only \(ready[0].shortName) is downloaded, so only it will be measured. Download \(other.shortName) in Settings → Transcription to compare the two.", .neutral)
+        }
+        return ("\(CalibrationReport.engineList(ready)) will be compared.", .positive)
+    }
+
+    static let microphoneDenied = "Microphone access is off. Allow devshout in System Settings → Privacy & Security → Microphone."
+
+    // Writing the script
+    static let preparingTitle = "Writing sentences that use your glossary terms…"
+    static let preparingDetail = "Claude is writing them. This takes a few seconds."
+    static let useBuiltInButton = "Use Built-in Sentences"
+
+    // Reading
+    static func sentenceCounter(index: Int, count: Int) -> String { "Sentence \(index + 1) of \(count)" }
+    static let readingHint = "Press Record, read the sentence aloud at your normal pace, then press Stop."
+    static let recordingHint = "Recording. Read the sentence, then press Stop."
+    static let startingHint = "Starting the microphone…"
+    static let stoppingHint = "Saving…"
+    static func recordedHint(_ duration: TimeInterval) -> String {
+        "Recorded (\(UIFormat.seconds(duration))). Record it again if you stumbled, or carry on."
+    }
+    static let recordButton = "Record"
+    static let stopButton = "Stop"
+    static let recordAgainButton = "Record Again"
+    static let nextButton = "Next"
+    static let finishButton = "Finish"
+    static let backButton = "Back"
+
+    static let dictationInProgress = "A dictation is in progress. Wait for it to finish, then try again."
+    static let stillStopping = "The last measurement is still stopping. Try again in a moment."
+    static let takeTooShort = "That was too short to use. Press Record and read the whole sentence."
+    static let takeTooLong = "Recording stopped after a minute. Record the sentence again if it was cut off."
+    static func couldNotRecord(_ reason: String) -> String { "Couldn't record: \(reason)" }
+
+    /// What the dictation pill says when a hotkey is pressed during calibration.
+    static let dictationBlockedTitle = "Voice calibration is running"
+    static let dictationBlockedDetail = "Finish or close the calibration window, then dictate."
+
+    // Analysing
+    static let analysingTitle = "Measuring how well you were understood…"
+    static func analysing(_ progress: CalibrationProgressState) -> String {
+        guard let engine = progress.engine else { return "Getting ready…" }
+        if progress.isLoading {
+            return "Loading \(engine.shortName). The first time can take a few minutes."
+        }
+        return "\(engine.shortName): sentence \(min(progress.done + 1, max(progress.total, 1))) of \(progress.total)"
+    }
+    static let cancelButton = "Cancel"
+
+    // Results
+    static let resultsTitle = "How well you were understood"
+    static let columnEngine = "Speech model"
+    static let columnAccuracy = "Words right"
+    static let columnTerms = "Glossary terms right"
+    static let columnSpeed = "Time per minute of speech"
+    static let inUse = "In use"
+
+    static func accuracy(_ score: CalibrationEngineScore) -> String { CalibrationReport.accuracy(score) }
+
+    static func terms(_ score: CalibrationEngineScore) -> String {
+        guard let rate = score.termHitRate else { return "None in the script" }
+        return "\(score.termHits) of \(score.termCount) (\(CalibrationRecommendation.percent(rate)))"
+    }
+
+    static func speed(_ score: CalibrationEngineScore) -> String {
+        guard let seconds = score.secondsPerMinute else { return "Not measured" }
+        return String(format: "%.1f s", seconds)
+    }
+
+    static func failure(_ failure: CalibrationEngineFailure) -> String {
+        "\(failure.engine.shortName) couldn't be measured: \(failure.message)"
+    }
+
+    static func switchButton(_ engine: EngineID) -> String { "Use \(engine.shortName)" }
+    static func nowUsing(_ engine: EngineID) -> String { "devshout is using \(engine.shortName)." }
+
+    static let correctionsTitle = "Words to fix from now on"
+    static let correctionsExplanation = "These glossary terms came out as something else. Ticked ones are added to your glossary as known mishearings, and replaced in every dictation."
+    static let noCorrections = "Every glossary term in the script came out right, or was already a known mishearing."
+
+    /// "heard “causia” → CORSIA"
+    static func correctionHeard(_ correction: LearnedCorrection) -> String { "heard “\(correction.heard)”" }
+
+    static func correctionDetail(_ correction: LearnedCorrection) -> String {
+        var detail = CalibrationReport.engineList(correction.engines)
+        if correction.count > 1 { detail += ", \(correction.count) times" }
+        return detail
+    }
+
+    static func ordinaryWarning(_ correction: LearnedCorrection) -> String {
+        let words = correction.heard.contains(" ") ? "are ordinary words" : "is an ordinary word"
+        return "“\(correction.heard)” \(words), so replacing it everywhere would also change sentences where you really said it."
+    }
+
+    static let notesTitle = "Notes for Claude"
+    static let notesExplanation = "These ordinary words were mixed up. They are never replaced automatically, but a ticked note is added to your glossary's Style section, which Claude reads when it tidies a dictation."
+
+    /// "“work” came out as “walk”"
+    static func note(_ note: LearnedStyleNote) -> String { "“\(note.said)” came out as “\(note.written)”" }
+
+    static let applyButton = "Add to Glossary"
+    static let added = "Added"
+
+    static func applied(corrections: Int, notes: Int) -> String {
+        var parts: [String] = []
+        if corrections > 0 { parts.append(UIFormat.plural(corrections, "mishearing")) }
+        if notes > 0 { parts.append(UIFormat.plural(notes, "note")) }
+        return "Added \(parts.joined(separator: " and ")) to your glossary."
+    }
+
+    static func couldNotApply(_ reason: String) -> String { "Couldn't change the glossary: \(reason)" }
+
+    static let doneButton = "Done"
+    static let closeButton = "Close"
+    static let tryAgainButton = "Try Again"
+    static let failedTitle = "Calibration couldn't finish"
+    static let noEngineReady = "No speech model is ready. Download one in Settings → Transcription, then try again."
+    static let nothingRecorded = "No sentence was recorded."
+}
+
 // MARK: - Menu
 
 enum MenuStatus {

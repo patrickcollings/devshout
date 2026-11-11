@@ -34,6 +34,7 @@ final class AppCoordinator {
     let devices: InputDevicesController
     let levelMeter: LevelMeterController
     let dictation: DictationController
+    let calibration: CalibrationController
     let recorder: MicRecorder
     let vad: SileroVAD
     let sounds: Sounds
@@ -112,6 +113,20 @@ final class AppCoordinator {
         self.vad = vad
         self.sounds = sounds
         self.dictation = dictation
+        self.calibration = CalibrationController(
+            services: CalibrationController.Services(
+                paths: paths,
+                settings: { box.value },
+                engines: engines,
+                glossary: glossary,
+                glossaryEditor: glossaryModel,
+                claude: claude,
+                vad: vad,
+                levelMeter: levelMeter,
+                isDictationActive: { dictation.isActive }
+            ),
+            model: models.calibration
+        )
         self.frontmost = FrontmostApp.shared
         self.onboardingWindow = OnboardingWindowController(model: models.onboarding)
         self.settingsWindow = SettingsWindowController(models: models)
@@ -147,6 +162,7 @@ final class AppCoordinator {
         dictation.startHotkeys()
         refreshHotkeyDisplay()
         refreshStorage()
+        calibration.loadLastResult()
 
         if !defaults.bool(forKey: AppDefaultsKey.onboardingCompleted) {
             showOnboarding()
@@ -212,7 +228,11 @@ final class AppCoordinator {
             self.updateSettings { $0.engine = id }
             self.glossary.state.setTokenCounter(self.engines.tokenCounter)
         }
-        engines.isDictationActive = { [weak self] in self?.dictation.isActive ?? false }
+        engines.isDictationActive = { [weak self] in
+            guard let self else { return false }
+            return self.dictation.isActive || self.calibration.isUsingEngines
+        }
+        wireCalibration()
 
         claude.onPathOverride = { [weak self] path in self?.updateSettings { $0.claudePathOverride = path } }
 
@@ -264,6 +284,12 @@ final class AppCoordinator {
             }
         )
         dictation.onFinished = { [weak self] in self?.refreshStorage() }
+    }
+
+    /// Voice calibration: dictation stands aside while it records or measures, and onboarding can open it.
+    private func wireCalibration() {
+        dictation.startBlocker = { [weak self] in self?.calibration.dictationBlocker }
+        models.onboarding.onCalibrate = { [weak self] in self?.calibration.open() }
     }
 
     private func wireGeneral() {

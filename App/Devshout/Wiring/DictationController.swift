@@ -36,6 +36,9 @@ final class DictationController {
     var tryIt = TryIt()
     /// A dictation finished (refresh history counts and the like).
     var onFinished: (() -> Void)?
+    /// Something else has the microphone or the engines (voice calibration): a title and detail for the pill, or nil
+    /// when a dictation may start.
+    var startBlocker: () -> (title: String, detail: String)? = { nil }
 
     private let services: Services
     private let pill: RecordingPillViewModel
@@ -169,6 +172,12 @@ final class DictationController {
         if let problem = services.engines.selectedModelProblem {
             hotkeys.recordingEnded()
             showError(problem.title, detail: problem.detail)
+            return
+        }
+        // Never a second recorder: voice calibration is recording a sentence or measuring the engines.
+        if let blocker = startBlocker() {
+            hotkeys.recordingEnded()
+            showError(blocker.title, detail: blocker.detail)
             return
         }
 

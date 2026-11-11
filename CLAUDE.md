@@ -38,7 +38,7 @@ CI:
 - **First model load is slow, once.** Core ML converts each model for the Neural Engine the first time an app loads it: about 10–20 minutes for Whisper, seconds for Parakeet. Rebuilding does not repeat it, but quitting the app mid-way restarts it, so check before `pkill`.
 - **Only one copy of the app can run** (global hotkeys, shared state). Quit it (`pkill -x devshout`) before launching a new build, and never while Patrick is mid-dictation.
 - **Look at UI changes before calling them done.** List devshout's windows with `CGWindowListCopyWindowInfo` and capture one with `screencapture -x -o -l <window id> <file>`. Capture only devshout's windows.
-- **Speech without a microphone:** `say -o file.wav --data-format=LEI16@16000 "…"` then `devshout-cli transcribe file.wav --engine parakeet|whisper --glossary bench/glossary.sample.md --chunks`.
+- **Speech without a microphone:** `say -o file.wav --data-format=LEI16@16000 "…"` then `devshout-cli transcribe file.wav --engine parakeet|whisper --glossary bench/glossary.sample.md --chunks`. `devshout-cli calibrate <folder> --glossary …` runs the app's voice calibration analysis on a folder of such files (`--help` shows how).
 
 ## Rules
 

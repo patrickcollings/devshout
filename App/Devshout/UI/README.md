@@ -36,6 +36,7 @@ The v0.1 SwiftUI screens (PLAN §7.1–§7.4 as amended by §0). Views are dumb:
 | `Components/` | Keycaps, level meter, waveform, status label, mode chip, open panels, visual effect |
 | `MenuBar/` | Menu, icon, Settings-opening workaround |
 | `Onboarding/` | The seven-step onboarding window |
+| `Calibration/` | The "Calibrate Your Voice" window: introduction, script, analysis, results (`CalibrationViewModel`; wording in `CalibrationCopy`) |
 | `Settings/` | The seven Settings tabs |
 | `Shared/` | Claude install / sign-in and speech model views used by onboarding and Settings |
 | `Overlay/` | `RecordingPill` and `OverlayPanel` |

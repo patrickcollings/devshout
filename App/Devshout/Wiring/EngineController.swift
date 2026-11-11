@@ -161,6 +161,23 @@ final class EngineController {
         }
     }
 
+    // MARK: Voice calibration
+
+    /// Engines that can be measured now: the model is downloaded and nothing is downloading, loading or deleting it.
+    var calibrationCandidates: [EngineID] {
+        EngineID.allCases.filter { model.status(for: $0).isReady && !deleting.contains($0) && prepareTasks[$0] == nil }
+    }
+
+    /// The engine instance for calibration to load and use (the same one dictation uses).
+    func engineForCalibration(_ id: EngineID) -> any TranscriptionEngine { instance(for: id) }
+
+    /// Calibration has finished with an engine: one that isn't selected doesn't need to stay in memory.
+    func calibrationFinished(with id: EngineID) {
+        guard id != selected, prepareTasks[id] == nil else { return }
+        let instance = instance(for: id)
+        Task { await instance.unload() }
+    }
+
     // MARK: Private
 
     private func instance(for id: EngineID) -> any TranscriptionEngine {
