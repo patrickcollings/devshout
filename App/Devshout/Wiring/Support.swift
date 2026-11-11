@@ -25,6 +25,8 @@ struct AppPaths: Sendable {
     var claudeConfig: URL { root.appendingPathComponent("claude", isDirectory: true) }
     /// The empty working directory `claude -p` runs in.
     var claudeWorkingDirectory: URL { root.appendingPathComponent("claude-cwd", isDirectory: true) }
+    /// Voice calibration: one folder per session, with its recordings and result.json.
+    var calibration: URL { root.appendingPathComponent("Calibration", isDirectory: true) }
     var models: ModelLocations { ModelLocations(root: root.appendingPathComponent("Models", isDirectory: true)) }
     /// Scratch space for the level meter (its throwaway recordings are deleted when the meter stops).
     var meterScratch: URL {
@@ -67,6 +69,11 @@ enum AppDefaultsKey {
     static let onboardingCompleted = "onboarding.completed"
     /// Only ever given as a launch argument (never stored): the Settings tab to open at launch.
     static let openSettingsTab = "openSettingsTab"
+    /// Only ever given as a launch argument: behave as if Claude were not connected, without reading the Keychain
+    /// (`-skipClaudeToken YES`), so a build launched to look at a screen shows no Keychain prompt.
+    static let skipClaudeToken = "skipClaudeToken"
+    /// Only ever given as a launch argument: open the voice calibration window at launch (`-openCalibration YES`).
+    static let openCalibration = "openCalibration"
     static let claudeRawOnly = "claude.rawOnly"
 }
 

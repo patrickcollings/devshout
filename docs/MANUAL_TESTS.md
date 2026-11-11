@@ -126,6 +126,34 @@ Useful places:
       `"status" : "recovered"` and the audio is intact
 - [ ] Launch at login: switch on, log out and in → devshout is in the menu bar
 
+## Calibrate your voice
+
+Without a microphone, `devshout-cli calibrate` runs the same analysis on recordings made with `say` (see its
+`--help`). The window itself needs checking by eye:
+
+- [ ] Settings → Transcription → **Calibrate Your Voice…** opens the window in front, with a Dock icon; the
+      introduction says which models will be compared (both, or only the one that is downloaded)
+- [ ] With Claude connected and terms in the glossary: "Writing sentences…" shows for a few seconds, then the
+      script; **Use Built-in Sentences** skips the wait. Disconnected, or with an empty glossary: straight to the script
+- [ ] The second half of the script uses your glossary terms, spelled as in the glossary
+- [ ] Each sentence is large and fits; Record → the meter moves and the timer counts → Stop → "Recorded (6.2 s)";
+      Return presses Record, Stop and Next in turn; Record Again replaces the take; Back works
+- [ ] A take under a second is refused with a note; the red light in the menu bar (the microphone) goes out after
+      every Stop, and when the window is closed mid-recording
+- [ ] Press ⌥Space while a sentence is recording, and while the models are being measured → the pill says "Voice
+      calibration is running" and nothing is recorded. Start a dictation first, then press Record → refused with a note
+- [ ] After the last sentence: progress per model ("Parakeet: sentence 4 of 10"), then the results; Cancel goes back
+      to the last sentence with the takes kept
+- [ ] Results: the sentence at the top matches the numbers; **Use Whisper** (or Parakeet) switches the engine and
+      the "In use" badge moves; nothing is offered when they are about the same and equally fast
+- [ ] Words to fix: an invented word is ticked, an ordinary word ("component") is not and carries a warning;
+      **Add to Glossary** adds `heard:` lines to the right entries (Settings → Glossary shows them) and the next
+      dictation fixes them; a ticked note lands under `## Style`
+- [ ] Settings → Transcription shows "Last calibrated <date>: Whisper 96%, Parakeet 89%", also after a relaunch;
+      `~/Library/Application Support/devshout/Calibration/<date>/` has `result.json` and the recordings, and the
+      previous session's folder has only its `result.json`
+- [ ] Onboarding → Try it: the calibration offer under the text box opens the same window; Done still finishes
+
 ## Polish
 
 - [ ] Light and dark mode; the menu bar icon follows the menu bar's appearance

@@ -56,6 +56,11 @@ public final class ClaudeConnection: ObservableObject {
         let task = Task { @MainActor in
             let found = await self.locate()
             self.installation = found
+            // The first Keychain read can wait on a permission prompt: do it off the main actor, so the app
+            // stays usable meanwhile. A caching store then answers `recheckExpiry` from memory.
+            if let cached = self.store as? CachedCredentialStore {
+                await Task.detached { _ = try? cached.load() }.value
+            }
             self.recheckExpiry()
         }
         refreshing = task

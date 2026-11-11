@@ -34,7 +34,8 @@ struct SettingsView: View {
         case .general: GeneralSettingsTab(model: models.general, hotkeys: models.hotkeys)
         case .modes: ModesSettingsTab(model: models.modes, hotkeys: models.hotkeys)
         case .apps: AppsSettingsTab(model: models.apps)
-        case .transcription: TranscriptionSettingsTab(speech: models.speech, microphone: models.microphone)
+        case .transcription: TranscriptionSettingsTab(speech: models.speech, microphone: models.microphone,
+                                                        calibration: models.calibration)
         case .claude: ClaudeSettingsTab(model: models.claude)
         case .glossary: GlossarySettingsTab(model: models.glossary)
         case .history: HistorySettingsTab(model: models.history)

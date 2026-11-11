@@ -15,10 +15,12 @@ import Foundation
 final class ClaudeController {
     let connection: ClaudeConnection
     let cleaner: ClaudeCLICleaner
+    /// Writes the voice calibration's glossary sentences: the same token, gate and folders as `cleaner`.
+    let sentenceWriter: ClaudeSentenceWriter
     /// The same clean-up, with whatever token is saved (not gated): Test Connection must work after a refusal.
     private let testCleaner: ClaudeCLICleaner
     private let cache: ClaudeInstallationCache
-    private let store: KeychainCredentialStore
+    private let store: CachedCredentialStore
     private let installer: ClaudeInstaller
     private let model: ClaudeViewModel
     private let defaults: UserDefaults
@@ -43,13 +45,26 @@ final class ClaudeController {
         let locator = ClaudeLocator(userOverride: pathOverride.map { URL(fileURLWithPath: $0) })
         let cache = ClaudeInstallationCache(locator: locator)
         self.cache = cache
-        let store = KeychainCredentialStore()
+        // One Keychain read per launch (each read can show a permission prompt). `-skipClaudeToken YES` never
+        // touches the Keychain: for launching a build only to look at a screen.
+        let keychain: any CredentialStore = defaults.bool(forKey: AppDefaultsKey.skipClaudeToken)
+            ? EmptyCredentialStore() : KeychainCredentialStore()
+        let store = CachedCredentialStore(keychain)
         self.store = store
         let gate = canClean
         cleaner = ClaudeCLICleaner(
             installation: { try await cache.installation() },
             credential: {
                 // Expired, refused or disconnected: no token, so Tidy and Structure paste the raw text.
+                guard gate.value else { return nil }
+                return try store.load()
+            },
+            configDirectory: paths.claudeConfig,
+            workingDirectory: paths.claudeWorkingDirectory
+        )
+        sentenceWriter = ClaudeSentenceWriter(
+            installation: { try await cache.installation() },
+            credential: {
                 guard gate.value else { return nil }
                 return try store.load()
             },
@@ -97,6 +112,9 @@ final class ClaudeController {
         }
         render()
     }
+
+    /// Whether Claude can be used right now (installed, connected, token not refused or expired).
+    var canCleanNow: Bool { canClean.value }
 
     /// The hint the overlay shows when Tidy or Structure pasted raw because of the connection.
     var rawFallbackHint: String? { connection.state.rawFallbackHint }
@@ -204,6 +222,8 @@ final class ClaudeController {
         var config = ModeConfig.defaults[.tidy] ?? ModeConfig(id: .tidy, claudeModel: "haiku", timeout: 30)
         config.timeout = max(config.timeout, 30)
         config.customInstructions = nil
+        // If the Keychain refused the token earlier, pressing Test Connection is the user asking to try again.
+        store.retryAfterFailure()
         let cleaner = testCleaner
         let started = Date()
         Task {

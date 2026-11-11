@@ -109,6 +109,8 @@ final class OnboardingViewModel: ObservableObject {
     let hotkeys: HotkeysViewModel
     /// Mark onboarding as done and close the window.
     var onFinish: @MainActor () -> Void
+    /// Open the voice calibration window (the optional offer on the last step).
+    var onCalibrate: @MainActor () -> Void = {}
 
     private var completionOnArrival: [OnboardingStep: Bool] = [:]
     private var isMonitoringLevels = false
@@ -174,6 +176,8 @@ final class OnboardingViewModel: ObservableObject {
         windowDidDisappear()
         onFinish()
     }
+
+    func calibrate() { onCalibrate() }
 
     /// Reopen (Settings → General → Reopen onboarding, menu → Set Up devshout…): at the first set-up step that
     /// still needs doing, or at Welcome when nothing or everything is done.
@@ -404,6 +408,7 @@ final class DevshoutViewModels {
     let glossary: GlossaryViewModel
     let privacy: PrivacyViewModel
     let history: HistoryViewModel
+    let calibration: CalibrationViewModel
     let menuBar: MenuBarViewModel
     let onboarding: OnboardingViewModel
     let pill: RecordingPillViewModel
@@ -436,6 +441,7 @@ final class DevshoutViewModels {
         self.glossary = glossary ?? GlossaryViewModel()
         self.privacy = privacy ?? PrivacyViewModel()
         self.history = HistoryViewModel()
+        self.calibration = CalibrationViewModel(speech: speech, microphone: microphone)
         self.menuBar = MenuBarViewModel(claude: claude, speech: speech, microphone: microphone,
                                         accessibility: accessibility, hotkeys: hotkeys)
         self.onboarding = OnboardingViewModel(microphone: microphone, accessibility: accessibility, speech: speech,

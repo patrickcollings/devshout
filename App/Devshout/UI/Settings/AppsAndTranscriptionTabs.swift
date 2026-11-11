@@ -144,6 +144,7 @@ private struct AppsBottomBar: View {
 struct TranscriptionSettingsTab: View {
     @ObservedObject var speech: SpeechEngineViewModel
     @ObservedObject var microphone: MicrophoneViewModel
+    @ObservedObject var calibration: CalibrationViewModel
 
     var body: some View {
         Form {
@@ -162,6 +163,18 @@ struct TranscriptionSettingsTab: View {
                 }
             } header: {
                 Text("Speech-to-text")
+            }
+
+            Section("Your voice") {
+                HStack(alignment: .center, spacing: 12) {
+                    // The last result once there is one; until then, what calibration is for.
+                    Text(calibration.lastResult.map(CalibrationCopy.lastResult) ?? CalibrationCopy.settingsExplanation)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(CalibrationCopy.openButton) { calibration.open() }
+                }
             }
 
             Section("Models") {
@@ -189,9 +202,10 @@ struct TranscriptionSettingsTab: View {
                 }
                 LabeledContent("Language", value: "English")
             }
+
         }
         .formStyle(.grouped)
-        .frame(width: SettingsLayout.width, height: 470)
+        .frame(width: SettingsLayout.width, height: 600)
         .onAppear { microphone.startLevelMonitoring(for: .settings) }
         .onDisappear { microphone.stopLevelMonitoring(for: .settings) }
     }
@@ -234,5 +248,11 @@ private struct ModelRow: View {
 }
 
 #Preview("Transcription") {
-    TranscriptionSettingsTab(speech: PreviewData.speech(PreviewData.downloading), microphone: PreviewData.microphone())
+    TranscriptionSettingsTab(speech: PreviewData.speech(PreviewData.downloading), microphone: PreviewData.microphone(),
+                             calibration: CalibrationViewModel())
+}
+
+#Preview("Transcription: calibrated") {
+    TranscriptionSettingsTab(speech: PreviewData.speech(), microphone: PreviewData.microphone(),
+                             calibration: PreviewData.calibration(.intro))
 }

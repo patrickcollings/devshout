@@ -396,6 +396,16 @@ struct TryItStepView: View {
                         ResultColumn(title: "Tidied", text: result.cleaned ?? "Claude isn't connected, so only the raw text was pasted.")
                     }
                 }
+                // Optional, and easy to skip: Done is still the main button.
+                HStack(alignment: .center, spacing: 10) {
+                    Text(CalibrationCopy.onboardingOffer)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(CalibrationCopy.openButton) { model.calibrate() }
+                        .controlSize(.small)
+                }
             }
             .frame(maxWidth: 520)
         }
