@@ -471,7 +471,7 @@ import Testing
         defer { h.temp.remove() }
         try await h.session.start(mode: .raw, targetApp: nil)
         _ = await h.session.stop()
-        #expect(h.plannedSampleCounts.get() == [1_100])
+        #expect(h.plannedSampleCounts == [1_100])
     }
 
     @Test func aRecorderThatNeverFinishesItsStreamDoesNotHang() async throws {
@@ -480,7 +480,7 @@ import Testing
         defer { h.temp.remove() }
         try await h.session.start(mode: .raw, targetApp: nil)
         let result = try #require(await h.session.stop())
-        #expect(h.plannedSampleCounts.get() == [16_000])
+        #expect(h.plannedSampleCounts == [16_000])
         #expect(result.recording.status == .completed)
     }
 

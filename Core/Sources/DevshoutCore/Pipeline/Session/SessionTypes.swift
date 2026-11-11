@@ -10,7 +10,8 @@ public enum SessionState: Sendable, Hashable {
     case idle
     /// `elapsed` is seconds of audio captured; `level` is the RMS (0...1) of the latest buffer.
     case recording(elapsed: TimeInterval, level: Float?)
-    /// `done` of `total` chunks transcribed (`total` is 0 while chunks are still being planned).
+    /// Recording has stopped and what is left is being transcribed: `done` of the recording's `total` chunks are
+    /// finished, counting those transcribed while recording (`total` is 0 until the last chunk has been cut).
     case transcribing(done: Int, total: Int)
     /// Clean-up is running with this Claude model alias ("haiku", "sonnet", …).
     case cleaning(model: String)
@@ -28,6 +29,37 @@ public enum SessionState: Sendable, Hashable {
         case .finished, .cancelled, .failed: true
         default: false
         }
+    }
+}
+
+/// How far transcription has got, published on `DictationSession.progress` each time it changes: chunks are
+/// transcribed in the background while the recording goes on.
+public struct TranscriptionProgress: Sendable, Hashable {
+    /// The text of the chunks transcribed while recording, stitched: the engine's raw words, before glossary fixes
+    /// and clean-up. A preview; it stops growing when recording stops.
+    public var text: String
+    /// Chunks cut from the recording so far. Final once `planningComplete`.
+    public var chunksPlanned: Int
+    /// Chunks finished: transcribed, or given up on.
+    public var chunksDone: Int
+    /// The recording has ended and its last chunk has been cut.
+    public var planningComplete: Bool
+    /// Seconds of audio in the chunks cut but not finished (including the one being transcribed).
+    public var pendingAudio: TimeInterval
+
+    public init(text: String = "", chunksPlanned: Int = 0, chunksDone: Int = 0, planningComplete: Bool = false,
+                pendingAudio: TimeInterval = 0) {
+        self.text = text
+        self.chunksPlanned = chunksPlanned
+        self.chunksDone = chunksDone
+        self.planningComplete = planningComplete
+        self.pendingAudio = pendingAudio
+    }
+
+    /// The last words of `text` that fit in `characters`, starting at a word boundary: one line for the pill.
+    public func latestText(characters: Int) -> String {
+        let collapsed = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return DictationSession.tail(of: collapsed, characters: characters) ?? ""
     }
 }
 
@@ -69,8 +101,8 @@ public struct DictationDependencies: Sendable {
     public var cleaner: any TextCleaner
     public var deliverer: any Deliverer
     public var history: HistoryStore
-    /// VAD + `ChunkPlanner` over the whole recording (v0.1 transcribes after stop).
-    public var planChunks: @Sendable ([Float]) async throws -> [AudioChunk]
+    /// Cuts this recording into chunks as it arrives (`VADChunkPlanner`). One per dictation.
+    public var planner: any LiveChunkPlanner
     /// `Stitcher`: joins chunk transcripts (given in index order) into one text.
     public var stitch: @Sendable ([ChunkTranscript]) -> String
     /// `TextFixer`: the glossary's deterministic fixes.
@@ -86,7 +118,7 @@ public struct DictationDependencies: Sendable {
                 cleaner: any TextCleaner,
                 deliverer: any Deliverer,
                 history: HistoryStore,
-                planChunks: @escaping @Sendable ([Float]) async throws -> [AudioChunk],
+                planner: any LiveChunkPlanner,
                 stitch: @escaping @Sendable ([ChunkTranscript]) -> String,
                 fixText: @escaping @Sendable (String) -> String = { $0 },
                 glossaryForClaude: @escaping @Sendable () -> String = { "" },
@@ -97,7 +129,7 @@ public struct DictationDependencies: Sendable {
         self.cleaner = cleaner
         self.deliverer = deliverer
         self.history = history
-        self.planChunks = planChunks
+        self.planner = planner
         self.stitch = stitch
         self.fixText = fixText
         self.glossaryForClaude = glossaryForClaude
@@ -129,9 +161,10 @@ public struct DictationOptions: Sendable, Hashable {
     /// to two minutes, twice (the retry); after that the rest of the chunks are not tried.
     public var minimumChunkTimeout: TimeInterval
     public var chunkTimeoutPerAudioSecond: Double
-    /// The same for chunk planning (voice detection over the whole recording, which runs hundreds of times faster
-    /// than real time): `planningTimeoutPerAudioSecond` × the recording's length, at least `minimumPlanningTimeout`
-    /// seconds. Taking longer than the recording itself is a hang; the dictation then fails, with the audio kept.
+    /// The same for chunk planning (voice detection, which runs hundreds of times faster than real time and so
+    /// keeps up with the recording): after stop, the planner gets `planningTimeoutPerAudioSecond` × the recording's
+    /// length, at least `minimumPlanningTimeout` seconds, to hand over the last chunk. Taking longer than the
+    /// recording itself is a hang; the dictation then fails, with the audio kept.
     public var minimumPlanningTimeout: TimeInterval
     public var planningTimeoutPerAudioSecond: Double
 
