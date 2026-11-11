@@ -116,7 +116,7 @@ public struct ClaudeCLICleaner: TextCleaner {
         case .structure:
             warnings = CoverageCheck.warnings(raw: raw, output: text,
                                               glossaryTerms: CoverageCheck.glossaryTerms(in: glossary))
-        case .raw:
+        default:
             break
         }
 

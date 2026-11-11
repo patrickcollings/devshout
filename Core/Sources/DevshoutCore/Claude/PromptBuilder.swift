@@ -41,6 +41,7 @@ public enum PromptBuilder {
         case .raw: nil
         case .tidy: tidyInstructions
         case .structure: structureInstructions
+        default: nil
         }
     }
 

@@ -79,7 +79,7 @@ public actor DictationSession {
         recordingID = folder.id
         audioURL = folder.audioURL
         record = Recording(id: folder.id, createdAt: deps.dateSource.now(), status: .completed, mode: mode,
-                           targetApp: targetApp, engine: deps.engine.id)
+                           modeName: settings.storedName(for: mode), targetApp: targetApp, engine: deps.engine.id)
 
         let stream: AsyncStream<[Float]>
         do {
@@ -116,6 +116,7 @@ public actor DictationSession {
         guard canSwitch else { return false }
         mode = newMode
         record?.mode = newMode
+        record?.modeName = settings.storedName(for: newMode)
         return true
     }
 
@@ -261,6 +262,7 @@ public actor DictationSession {
         // 5. Clean-up (Tidy, Structure). Any failure delivers the raw text.
         let finalMode = mode
         rec.mode = finalMode
+        rec.modeName = settings.storedName(for: finalMode)
         var deliveredText = text
         var usedRaw = false
         var reason: String?
@@ -274,7 +276,8 @@ public actor DictationSession {
             switch attempt {
             case .cleaned(let result):
                 deliveredText = result.text
-                rec.versions.append(CleanVersion(result, mode: finalMode, createdAt: deps.dateSource.now()))
+                rec.versions.append(CleanVersion(result, mode: finalMode, modeName: rec.modeName,
+                                                 createdAt: deps.dateSource.now()))
             case .failed(let error):
                 usedRaw = true
                 cleanError = error

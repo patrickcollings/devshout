@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "defaultMode": "custom-11111111-aaaa-4bbb-8ccc-000000000001",
+  "modes": {
+    "tidy": { "id": "tidy", "claudeModel": "haiku", "timeout": 20 },
+    "custom-11111111-aaaa-4bbb-8ccc-000000000001": { "claudeModel": "opus", "timeout": 99 }
+  },
+  "customModes": [
+    {
+      "id": "custom-11111111-aaaa-4bbb-8ccc-000000000001",
+      "name": "Slack message",
+      "instructions": "Write what the speaker said as a Slack message.",
+      "claudeModel": "haiku",
+      "timeout": 20,
+      "symbol": "speechBubble",
+      "tint": "pink"
+    },
+    {
+      "id": "custom-22222222-aaaa-4bbb-8ccc-000000000002",
+      "name": "  ",
+      "timeout": 1e30,
+      "symbol": "a-symbol-from-a-later-version",
+      "tint": 7,
+      "aFieldFromALaterVersion": true
+    },
+    { "id": "custom-11111111-aaaa-4bbb-8ccc-000000000001", "name": "A second mode with the first one's id" },
+    { "id": "tidy", "name": "Pretends to be a built-in" },
+    { "id": "custom-has.a.dot", "name": "An id that isn't safe in a hotkey name" },
+    { "name": "No id at all" },
+    "not an object"
+  ],
+  "perAppModes": {
+    "com.tinyspeck.slackmacgap": "custom-11111111-aaaa-4bbb-8ccc-000000000001",
+    "com.apple.mail": "custom-99999999-aaaa-4bbb-8ccc-000000000009",
+    "com.apple.Terminal": "structure"
+  }
+}
