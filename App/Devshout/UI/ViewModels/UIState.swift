@@ -496,6 +496,42 @@ enum AudioRetention: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
+// MARK: - History
+
+/// What the History detail pane's Play button is doing.
+enum HistoryPlayback: Hashable, Sendable {
+    case idle
+    /// This recording's audio is playing.
+    case playing(UUID)
+    /// This recording's audio couldn't be played; `message` says why ("The audio file is no longer there").
+    case unavailable(UUID, message: String)
+}
+
+/// A recording's transcript being sent to Claude again from History ("Re-run").
+enum HistoryRerunState: Hashable, Sendable {
+    /// `model` is the `ModeConfig.claudeModel` value ("haiku").
+    case running(mode: ModeID, model: String)
+    /// `message` is ready to show ("Claude isn't connected. …").
+    case failed(mode: ModeID, message: String)
+}
+
+/// What "Add correction…" did, shown in the detail pane of the recording it was made from.
+struct HistoryCorrectionNotice: Hashable, Sendable {
+    var recordingID: UUID
+    var text: String
+    var tone: StatusTone
+}
+
+/// One titled text in the History detail pane: a clean version, what was pasted, or the transcript as heard.
+struct HistorySection: Hashable, Sendable, Identifiable {
+    var id: String
+    /// "Tidy · Haiku · 10 Nov 2026, 14:02", "Pasted into Slack", "As heard, before Claude".
+    var title: String
+    var text: String
+    /// A line under the text (the clean-up's warnings), when there is one.
+    var note: String? = nil
+}
+
 // MARK: - Recording pill
 
 /// What the overlay pill is showing (PLAN §7.3). Showing and hiding the panel is up to the caller.

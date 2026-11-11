@@ -100,4 +100,29 @@ final class GlossaryController {
             state.update(.empty)
         }
     }
+
+    /// "Add correction…" in History: adds `heard` as a mishearing of `term` (on its entry, or on a new one in
+    /// Terms or People), saves glossary.md, and brings the editor and the pipeline up to date, so the Glossary
+    /// tab shows the entry and the next dictation uses it.
+    ///
+    /// The edit is made to the file as it is on disk, so unsaved edits in the Glossary tab are not saved by it;
+    /// the editor's text gets the same edit and stays unsaved. Throws when the file can't be read or written.
+    @discardableResult
+    func addCorrection(heard: String, term: String,
+                       kind: GlossaryEditor.CorrectionKind) throws -> GlossaryEditor.CorrectionOutcome {
+        let onDisk = try file.loadText()
+        let result = GlossaryEditor.applyingCorrection(heard: heard, term: term, kind: kind, to: onDisk)
+        guard result.changed else { return result.outcome }
+        try file.save(text: result.markdown)
+        state.update(GlossaryParser.parse(result.markdown))
+        model.savedElsewhere(result.markdown) { draft in
+            GlossaryEditor.addingCorrection(heard: heard, term: term, kind: kind, to: draft)
+        }
+        return result.outcome
+    }
+
+    /// The glossary's spelling of the entry a correction for `term` would go on, or nil when it would be new.
+    func existingTerm(matching term: String) -> String? {
+        GlossaryEditor.existingTerm(matching: term, in: model.savedText)
+    }
 }

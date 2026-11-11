@@ -53,10 +53,13 @@ public struct SpikeChunkReport: Codable, Sendable, Hashable {
     /// How long the engine took.
     public var elapsed: TimeInterval
     public var text: String
+    /// The engine's word timings (seconds from the start of the recording), when it gives any: what the
+    /// stitcher works from at a forced seam.
+    public var words: [TimedWord]?
 
     public init(index: Int, start: TimeInterval, end: TimeInterval, overlapBefore: TimeInterval,
                 availableAt: TimeInterval, startedAt: TimeInterval? = nil, finishedAt: TimeInterval? = nil,
-                elapsed: TimeInterval, text: String) {
+                elapsed: TimeInterval, text: String, words: [TimedWord]? = nil) {
         self.index = index
         self.start = start
         self.end = end
@@ -66,6 +69,7 @@ public struct SpikeChunkReport: Codable, Sendable, Hashable {
         self.finishedAt = finishedAt
         self.elapsed = elapsed
         self.text = text
+        self.words = words
     }
 
     public var duration: TimeInterval { end - start }
@@ -341,7 +345,8 @@ public struct SpikeTranscriber: Sendable {
                              availableAt: item.availableAt,
                              startedAt: starts[index], finishedAt: finishes[index],
                              elapsed: index < elapsed.count ? elapsed[index] : 0,
-                             text: index < transcripts.count ? transcripts[index].text : "")
+                             text: index < transcripts.count ? transcripts[index].text : "",
+                             words: index < transcripts.count ? transcripts[index].words : nil)
         }
         if !schedule.isEmpty, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             warnings.append("The engine returned no text.")

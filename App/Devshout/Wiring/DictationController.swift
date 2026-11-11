@@ -36,6 +36,8 @@ final class DictationController {
     var tryIt = TryIt()
     /// A dictation finished (refresh history counts and the like).
     var onFinished: (() -> Void)?
+    /// A dictation is about to open the microphone (silence anything devshout itself is playing).
+    var onWillStart: (() -> Void)?
 
     private let services: Services
     private let pill: RecordingPillViewModel
@@ -172,6 +174,7 @@ final class DictationController {
             return
         }
 
+        onWillStart?()
         let settings = services.settings()
         let mode = resolveMode(for: hotkey)
         let front = FrontmostApp.current

@@ -37,7 +37,7 @@ CI:
 - **State outside the repo:** `~/Library/Application Support/devshout/` (models, recordings, `settings.json`, `glossary.md`, Claude's empty config folder) and the Claude token in the Keychain. Don't touch anything else outside the repo without asking Patrick.
 - **First model load is slow, once.** Core ML converts each model for the Neural Engine the first time an app loads it: about 10–20 minutes for Whisper, seconds for Parakeet. Rebuilding does not repeat it, but quitting the app mid-way restarts it, so check before `pkill`.
 - **Only one copy of the app can run** (global hotkeys, shared state). Quit it (`pkill -x devshout`) before launching a new build, and never while Patrick is mid-dictation.
-- **Look at UI changes before calling them done.** List devshout's windows with `CGWindowListCopyWindowInfo` and capture one with `screencapture -x -o -l <window id> <file>`. Capture only devshout's windows.
+- **Look at UI changes before calling them done.** List devshout's windows with `CGWindowListCopyWindowInfo` and capture one with `screencapture -x -o -l <window id> <file>`. Capture only devshout's windows. To land on a Settings tab at launch: `open "$(scripts/build-app.sh)" --args -openSettingsTab history` (any `SettingsTab` name).
 - **Speech without a microphone:** `say -o file.wav --data-format=LEI16@16000 "…"` then `devshout-cli transcribe file.wav --engine parakeet|whisper --glossary bench/glossary.sample.md --chunks`.
 
 ## Rules

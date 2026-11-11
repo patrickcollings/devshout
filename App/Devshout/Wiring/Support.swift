@@ -65,6 +65,8 @@ final class LockedBox<Value>: @unchecked Sendable {
 /// Flags kept in UserDefaults rather than settings.json (they're about this Mac's set-up, not preferences).
 enum AppDefaultsKey {
     static let onboardingCompleted = "onboarding.completed"
+    /// Only ever given as a launch argument (never stored): the Settings tab to open at launch.
+    static let openSettingsTab = "openSettingsTab"
     static let claudeRawOnly = "claude.rawOnly"
 }
 
