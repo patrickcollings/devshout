@@ -59,9 +59,9 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
         let config = ChunkPlannerConfig.default
         #expect(config.minSpeechBeforeCut == 3)
         #expect(config.cutSilence == 0.6)
-        #expect(config.speechThreshold == 0.3)
+        #expect(config.speechThreshold == 0.5)
         #expect(config.speechExitOffset == 0.15)
-        #expect(abs(config.speechExitThreshold - 0.15) < 0.0001)
+        #expect(abs(config.speechExitThreshold - 0.35) < 0.0001)
         #expect(config.forcedCutSearchWindow == 2)
         #expect(config.forcedCutOverlap == 1)
         #expect(config.minSpeechToTranscribe == 0.25)
@@ -135,15 +135,19 @@ private func checkInvariants(_ chunks: [AudioChunk], total: Int, max maxDuration
     }
 
     @Test func hysteresisKeepsTheCurrentState() {
-        // 0.2 is between the exit (0.15) and entry (0.3) thresholds: it continues speech and continues silence.
-        let scenario = Scenario().with(10, 0.2).speech(15).with(10, 0.2).speech(15).silence(4)
+        // 0.4 is between the exit (0.35) and entry (0.5) thresholds: it continues speech and continues silence.
+        let scenario = Scenario().with(10, 0.4).speech(15).with(10, 0.4).speech(15).silence(4)
         let chunks = scenario.plan()
         #expect(chunks.count == 1)
         #expect(chunks.first?.startSample == 10 * frame - pad)
         #expect(chunks.first?.endSample == 50 * frame + pad)
-        // A dip below 0.15 does end speech.
+        // A dip below 0.35 does end speech.
         let dipped = Scenario().speech(15).with(4, 0.1).speech(15).silence(4).plan()
         #expect(dipped.count == 2)
+        // What Silero really gives for the pause after speech (measured: 0.19–0.28 against 1.00 for speech).
+        // With the earlier thresholds (0.3 and 0.15) this never counted as silence, and every chunk ran to its limit.
+        let measured = Scenario().speech(15).with(4, 0.24).speech(15).silence(4).plan()
+        #expect(measured.count == 2)
     }
 
     @Test func forcedCutAtTheMaximumWithOverlap() {

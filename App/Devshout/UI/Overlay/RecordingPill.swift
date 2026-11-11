@@ -30,8 +30,12 @@ struct RecordingPill: View {
                 // The built-in names always fit. A longer custom name is cut to what the line has room for: beside
                 // the waveform and timer while recording, and to the width of "Structure" once the line carries
                 // text ("Rewriting with Sonnet…", "Pasted into Slack").
-                ModeChip(mode: model.modeDescriptor, compact: true,
-                         nameWidth: model.phase.isRecording ? Self.chipNameWidthRecording : Self.chipNameWidth)
+                // While Claude is working the line also carries "Paste raw" and the cancel button, and the title
+                // already says what the mode is doing ("Tidying with Haiku…"), so the chip makes way.
+                if !model.showsPasteRawButton {
+                    ModeChip(mode: model.modeDescriptor, compact: true,
+                             nameWidth: model.phase.isRecording ? Self.chipNameWidthRecording : Self.chipNameWidth)
+                }
                 centre
                     .frame(maxWidth: .infinity, alignment: .leading)
                 trailing
@@ -93,7 +97,7 @@ struct RecordingPill: View {
             }
         } else if model.showsPasteRawButton {
             HStack(spacing: 6) {
-                Button("Paste raw now ⌥⏎") { model.pasteRawNow() }
+                Button("Paste raw ⌥⏎") { model.pasteRawNow() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Skip Claude and paste what was transcribed")

@@ -285,7 +285,7 @@ Retention settings: audio is kept 30 days by default, text forever, and both can
 
 The input is the stream of Silero speech probabilities from FluidAudio's VAD (FluidAudio's VAD works on 4,096-sample / 256 ms frames; the spike confirms the frame size and whether finer frames are worth it) plus the running sample count. The output is cut points. The rules:
 
-- **Natural cut:** once a chunk has ≥ 3 s of speech, cut in the middle of the first silence ≥ 0.6 s (probability < 0.3, with hysteresis like FluidAudio's `VadSegmentationConfig`).
+- **Natural cut:** once a chunk has ≥ 3 s of speech, cut in the middle of the first silence ≥ 0.6 s (speech starts at probability ≥ 0.5 and ends below 0.35, Silero's own defaults; 0.3 and 0.15 were tried first and missed nearly every pause).
 - **Forced cut:** a chunk may never exceed `engine.maxChunkDuration` (Parakeet ≈ 14.5 s, because its encoder window is 15 s; Whisper ≈ 28 s). If no silence comes, cut at the lowest-probability frame in the last 2 s before the limit, and **overlap the next chunk by 1.0 s**.
 - **Skip silence:** a chunk with < 0.3 s of speech is not transcribed. This stops Whisper hallucinating ("Thank you for watching") over silence.
 - **Padding:** each chunk keeps 0.15 s of audio either side of the speech, so first and last phonemes aren't clipped.
