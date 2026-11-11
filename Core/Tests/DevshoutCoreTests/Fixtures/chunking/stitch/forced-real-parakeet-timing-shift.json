@@ -1,0 +1,178 @@
+{
+  "description": "Recorded from Parakeet on a real 48 s file (not invented timings). The two decodes time the same words about 0.28 s apart: the previous chunk has \"not\" at 33.38 s and \"12%.\" at 33.62–33.94 s, the next chunk has \"Not\" at 33.66 s and \"twelve.\" at 33.90 s. Without allowing for that shift, \"twelve.\" starts after the middle of \"12%.\" and survived: \"not 12%. twelve.\" The shift is measured from the word both decodes agree on (\"not\").",
+  "expected": "Status. In the MySupply table, sort by vintage, then by registry, Vera first, gold standard second. The buffer pool contribution for the ARR project is 20%, not 12%.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 317824,
+      "endSample": 546816,
+      "overlapBefore": 0,
+      "text": "Status. In the MySupply table, sort by vintage, then by registry, Vera first, gold standard second. The buffer pool contribution for the ARR project is 20%, not 12%.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Status.",
+          "start": 20.024,
+          "end": 21.464
+        },
+        {
+          "text": "In",
+          "start": 21.464,
+          "end": 21.704
+        },
+        {
+          "text": "the",
+          "start": 21.704,
+          "end": 21.944
+        },
+        {
+          "text": "MySupply",
+          "start": 21.944,
+          "end": 22.824
+        },
+        {
+          "text": "table,",
+          "start": 22.824,
+          "end": 23.384
+        },
+        {
+          "text": "sort",
+          "start": 23.384,
+          "end": 23.784
+        },
+        {
+          "text": "by",
+          "start": 23.784,
+          "end": 23.944
+        },
+        {
+          "text": "vintage,",
+          "start": 23.944,
+          "end": 24.744
+        },
+        {
+          "text": "then",
+          "start": 24.744,
+          "end": 24.984
+        },
+        {
+          "text": "by",
+          "start": 24.984,
+          "end": 25.304
+        },
+        {
+          "text": "registry,",
+          "start": 25.304,
+          "end": 26.024
+        },
+        {
+          "text": "Vera",
+          "start": 26.024,
+          "end": 26.344
+        },
+        {
+          "text": "first,",
+          "start": 26.584,
+          "end": 27.144
+        },
+        {
+          "text": "gold",
+          "start": 27.144,
+          "end": 27.544
+        },
+        {
+          "text": "standard",
+          "start": 27.544,
+          "end": 28.104
+        },
+        {
+          "text": "second.",
+          "start": 28.264,
+          "end": 29.144
+        },
+        {
+          "text": "The",
+          "start": 29.144,
+          "end": 29.384
+        },
+        {
+          "text": "buffer",
+          "start": 29.384,
+          "end": 30.024
+        },
+        {
+          "text": "pool",
+          "start": 30.024,
+          "end": 30.344
+        },
+        {
+          "text": "contribution",
+          "start": 30.344,
+          "end": 30.904
+        },
+        {
+          "text": "for",
+          "start": 30.904,
+          "end": 31.064
+        },
+        {
+          "text": "the",
+          "start": 31.064,
+          "end": 31.304
+        },
+        {
+          "text": "ARR",
+          "start": 31.304,
+          "end": 31.944
+        },
+        {
+          "text": "project",
+          "start": 31.944,
+          "end": 32.264
+        },
+        {
+          "text": "is",
+          "start": 32.264,
+          "end": 32.424
+        },
+        {
+          "text": "20%,",
+          "start": 32.584,
+          "end": 33.384
+        },
+        {
+          "text": "not",
+          "start": 33.384,
+          "end": 33.544
+        },
+        {
+          "text": "12%.",
+          "start": 33.624,
+          "end": 33.944
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 530816,
+      "endSample": 559456,
+      "overlapBefore": 16000,
+      "text": "Not twelve.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Not",
+          "start": 33.656,
+          "end": 33.896
+        },
+        {
+          "text": "twelve.",
+          "start": 33.896,
+          "end": 34.456
+        }
+      ]
+    }
+  ]
+}

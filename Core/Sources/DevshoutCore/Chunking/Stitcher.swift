@@ -10,9 +10,11 @@ import Foundation
 ///   - With word timings on both sides, by time. The previous chunk drops its words starting at or after the middle
 ///     of the overlap (they sit against its cut, where a word may be clipped). This chunk then drops its leading
 ///     words that the previous chunk's **last kept word** already covers: those starting before the middle of that
-///     word. Nothing is compared as text, so a word the two decodes wrote differently ("12%" and "twelve") is still
-///     kept once; and this chunk is cut where the previous one really stops rather than at a fixed time, so a word
-///     the two decodes time either side of the middle of the overlap is neither lost nor doubled.
+///     word. This chunk is cut where the previous one really stops rather than at a fixed time, so a word the two
+///     decodes time either side of the middle of the overlap is neither lost nor doubled. The two decodes' clocks
+///     can disagree (a chunk's first words are placed less precisely): the difference is measured from the words
+///     both wrote the same way and allowed for (`timingShift`). A word they wrote differently ("12%" and "twelve")
+///     can't be matched as text in general, so it is dropped by time, or as the same number written two ways.
 ///   - Without timings, the longest run of up to `maxFallbackWords` words that ends the previous chunk and starts
 ///     this one is removed from the previous chunk. Words are compared ignoring case and punctuation, and a number
 ///     word equals its digits ("twelve" and "12%").
@@ -172,6 +174,8 @@ public enum Stitcher {
     static func deduplicate(_ previous: inout [Token], _ next: inout [Token], midpoint: TimeInterval) -> Dedupe {
         let timed = previous.allSatisfy { $0.start != nil } && next.allSatisfy { $0.start != nil }
         if timed {
+            // Measured before anything is dropped: it needs the words both decodes heard.
+            let shift = timingShift(previous: previous, next: next)
             previous.removeAll { $0.start! >= midpoint }
             // Nothing kept (the previous chunk only has words in the second half of the overlap): the next chunk
             // heard all of them, so it keeps everything.
@@ -179,8 +183,14 @@ public enum Stitcher {
             // A leading word of the next chunk is a second hearing of something already kept when it starts before
             // the middle of the last kept word; the word that follows starts around that word's end. The middle
             // leaves half the word's length for the two decodes to disagree by, in either direction.
-            let covered = (lastStart + max(last.end ?? lastStart, lastStart)) / 2
-            next.removeFirst(next.prefix { $0.start! < covered }.count)
+            let lastEnd = max(last.end ?? lastStart, lastStart)
+            let covered = (lastStart + lastEnd) / 2
+            next.removeFirst(next.prefix { $0.start! - shift < covered }.count)
+            // The same word written two ways ("12%." then "twelve.") that still overlaps the last kept word.
+            if let first = next.first, first.start! - shift < lastEnd, !comparable(first.text).isEmpty,
+               comparable(first.text) == comparable(last.text) {
+                next.removeFirst()
+            }
             return .timed
         }
         let longest = min(maxFallbackWords, previous.count, next.count)
@@ -194,6 +204,44 @@ public enum Stitcher {
             }
         }
         return .textUnmatched
+    }
+
+    /// The largest difference between the two decodes' clocks that is believed.
+    static let maxTimingShift: TimeInterval = 0.6
+    /// How closely two shared words must agree on that difference to count as the same shift.
+    static let timingShiftAgreement: TimeInterval = 0.15
+
+    /// How much later the next chunk times the words both chunks heard (negative when earlier). An engine places
+    /// words less precisely at the very start of a chunk, where it has no context: Parakeet has been seen putting
+    /// the same words 0.28 s later in the next chunk than in the previous one, which is longer than a short word.
+    ///
+    /// Measured from the words at the seam that both decodes wrote the same way (a number word equals its
+    /// digits), each paired with its nearest copy in time. One shared word is not enough: a copy that starts
+    /// after the first one ended looks exactly like a word said twice ("very very"), which must survive. So the
+    /// shift is believed only when at least two shared words agree on it, or when a single shared word's two
+    /// copies overlap in time. Zero otherwise.
+    static func timingShift(previous: [Token], next: [Token]) -> TimeInterval {
+        let tail = previous.suffix(maxFallbackWords)
+        var differences: [TimeInterval] = []
+        var overlapping = false
+        for word in next.prefix(maxFallbackWords) {
+            let text = comparable(word.text)
+            guard !text.isEmpty, let start = word.start else { continue }
+            let nearest = tail
+                .filter { comparable($0.text) == text && $0.start != nil }
+                .min { abs(start - $0.start!) < abs(start - $1.start!) }
+            guard let nearest, let nearestStart = nearest.start else { continue }
+            let difference = start - nearestStart
+            guard abs(difference) <= maxTimingShift else { continue }
+            differences.append(difference)
+            if start < (nearest.end ?? nearestStart) { overlapping = true }
+        }
+        let sorted = differences.sorted()
+        guard let smallest = sorted.first, let largest = sorted.last else { return 0 }
+        if sorted.count >= 2 {
+            return largest - smallest <= timingShiftAgreement ? sorted[sorted.count / 2] : 0
+        }
+        return overlapping ? smallest : 0
     }
 
     /// Merges the words either side of a forced seam when they overlap as strings.
