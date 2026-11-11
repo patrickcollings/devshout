@@ -1,0 +1,24 @@
+{
+  "description": "No timings: a number word matches its digits, so \"not 12%.\" and \"Not twelve.\" are one repeat. As always in the fallback, the next chunk's version is kept.",
+  "expected": "So the increase is 20%, Not twelve. That matters.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "So the increase is 20%, not 12%.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "Not twelve. That matters.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1
+    }
+  ]
+}

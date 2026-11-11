@@ -7,6 +7,13 @@ import Foundation
 /// sees it, and every outcome after recording starts (finished, cancelled or failed) saves `record.json` next to the
 /// audio. Clean-up failures never fail the dictation: the raw text is delivered and the reason recorded.
 ///
+/// One chunk failing doesn't lose the others: a chunk the engine can't transcribe is tried once more and then left
+/// out, the rest is delivered, and the record's `errorMessage` says which part of the recording is missing. The
+/// dictation only fails when no chunk gave any text.
+///
+/// Nothing the session waits for can hold it for ever: chunk planning and each chunk's transcription have a time
+/// limit (`DictationOptions`), as clean-up always had. A chunk that runs out of time counts as failed.
+///
 /// States are published on `states`, which finishes after the terminal state (`finished`, `cancelled`, `failed`).
 public actor DictationSession {
     public nonisolated let states: AsyncStream<SessionState>
@@ -169,10 +176,18 @@ public actor DictationSession {
 
         // 2. Plan chunks.
         let chunks: [AudioChunk]
-        do {
-            chunks = try await deps.planChunks(samples).sorted { $0.index < $1.index }
-        } catch {
-            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(Self.describe(error))")
+        let planChunks = deps.planChunks
+        let recorded = samples
+        let planLimit = options.planningTimeout(forAudio: Double(recorded.count) / Double(AudioFormat.sampleRate))
+        switch await Self.bounded(planLimit, { try await planChunks(recorded) }) {
+        case .value(let planned):
+            chunks = planned.sorted { $0.index < $1.index }
+        case .failed(let reason):
+            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(reason)")
+        case .timedOut:
+            return fail(rec, stage: .transcribing,
+                        message: "Couldn't split the audio: finding the speech in it took longer than "
+                            + "\(Self.seconds(planLimit)), so devshout stopped waiting.")
         }
         guard !chunks.isEmpty else {
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
@@ -182,32 +197,64 @@ public actor DictationSession {
         let engine = deps.engine
         let vocabulary = engine.acceptsVocabularyPrompt ? deps.vocabularyPrompt() : nil
         var transcripts: [ChunkTranscript] = []
-        for chunk in chunks {
-            publish(.transcribing(done: transcripts.count, total: chunks.count))
+        var skipped: [SkippedPart] = []
+        var engineStuck = false
+        for (position, chunk) in chunks.enumerated() {
+            publish(.transcribing(done: position, total: chunks.count))
+            if engineStuck {
+                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
+                                           endSample: chunk.endSample,
+                                           reason: "not tried, because the engine had stopped answering"))
+                continue
+            }
             let context = TranscriptionContext(language: options.language, vocabularyPrompt: vocabulary,
                                                previousText: Self.tail(of: transcripts.last?.text,
                                                                        characters: options.previousTextCharacters))
-            do {
-                transcripts.append(try await engine.transcribe(chunk, context: context))
-            } catch {
-                if !transcripts.isEmpty { rec.rawText = deps.stitch(transcripts) }
-                return fail(rec, stage: .transcribing,
-                            message: "Couldn't transcribe part \(chunk.index + 1) of \(chunks.count): \(Self.describe(error))")
+            // One more try: a failure is often a one-off (the model being reloaded, a busy Neural Engine).
+            var failure: String?
+            var timeouts = 0
+            let limit = options.chunkTimeout(forAudio: chunk.duration)
+            for _ in 0..<2 {
+                switch await Self.bounded(limit, { try await engine.transcribe(chunk, context: context) }) {
+                case .value(let transcript):
+                    transcripts.append(transcript)
+                    failure = nil
+                case .failed(let reason):
+                    failure = reason
+                case .timedOut:
+                    failure = "the engine didn't answer within \(Self.seconds(limit))"
+                    timeouts += 1
+                }
+                if failure == nil { break }
+            }
+            // Out of time twice running: the engine is stuck, not slow. Both engines run one call at a time, so
+            // every later chunk would queue behind the stuck call and run out of time as well, twice each. Stop
+            // here and deliver what there is, rather than sit in "transcribing" for minutes to learn nothing.
+            if timeouts == 2 { engineStuck = true }
+            if let failure {
+                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
+                                           endSample: chunk.endSample, reason: failure))
             }
         }
-        publish(.transcribing(done: transcripts.count, total: chunks.count))
+        publish(.transcribing(done: chunks.count, total: chunks.count))
+        let partial = SkippedPart.summary(skipped, of: chunks.count)
 
         // 4. Stitch and apply glossary fixes.
         let raw = deps.stitch(transcripts)
-        rec.rawText = raw
+        if !transcripts.isEmpty { rec.rawText = raw }
         var text = raw
-        if settings.applyGlossaryFixes {
+        if settings.applyGlossaryFixes, !transcripts.isEmpty {
             text = deps.fixText(raw)
             rec.fixedText = text
             rec.fixesApplied = true
         }
         rec.timings.transcription = deps.dateSource.now().timeIntervalSince(stoppedAt)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Nothing to deliver. Say why when the engine failed, rather than blaming the speaker.
+            if let first = skipped.first {
+                let what = chunks.count == 1 ? "the recording" : "any of the recording's \(chunks.count) parts"
+                return fail(rec, stage: .transcribing, message: "Couldn't transcribe \(what): \(first.reason)")
+            }
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
         }
 
@@ -250,13 +297,16 @@ public actor DictationSession {
         rec.deliveredText = deliveredText
         rec.delivered = DeliveryRecord(outcome)
         rec.status = .completed
-        if let recorderError { rec.errorMessage = "The recorder reported: \(recorderError)" }
+        // Problems that didn't stop the dictation, for History.
+        let problems = [partial?.detail, recorderError.map { "The recorder reported: \($0)" }].compactMap { $0 }
+        if !problems.isEmpty { rec.errorMessage = problems.joined(separator: " ") }
 
         // 7. History.
         let finished = SessionState.finished(outcome: outcome, usedRaw: usedRaw, reason: reason, authFailed: authFailed)
         var result = saveAndFinish(rec, state: finished)
         result.cleanError = cleanError
         result.authFailed = authFailed
+        result.missingPartsNotice = partial?.notice
         return result
     }
 
@@ -303,11 +353,48 @@ public actor DictationSession {
             let limit = config.timeout + max(0, options.cleanGracePeriod)
             let timeout = config.timeout
             racers.append {
-                try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: sleepNanoseconds(limit))
                 return .failed(.timedOut(after: timeout))
             }
         }
         return await firstToFinish(racers)
+    }
+
+    // MARK: Time limits
+
+    private enum Bounded<Value: Sendable>: Sendable {
+        case value(Value)
+        case failed(String)
+        case timedOut
+    }
+
+    /// Runs `operation`, but stops waiting after `limit` seconds (0 or less: no limit). The operation is cancelled
+    /// then, and whatever it does afterwards is ignored; a stuck Core ML call can't be killed, only abandoned.
+    private nonisolated static func bounded<Value: Sendable>(
+        _ limit: TimeInterval, _ operation: @escaping @Sendable () async throws -> Value
+    ) async -> Bounded<Value> {
+        var racers: [@Sendable () async -> Bounded<Value>] = [
+            {
+                do {
+                    return .value(try await operation())
+                } catch {
+                    return .failed(describe(error))
+                }
+            },
+        ]
+        if limit > 0 {
+            racers.append {
+                try? await Task.sleep(nanoseconds: sleepNanoseconds(limit))
+                return .timedOut
+            }
+        }
+        return await firstToFinish(racers)
+    }
+
+    /// "30 s", "2.5 s".
+    nonisolated static func seconds(_ limit: TimeInterval) -> String {
+        let rounded = (min(max(limit, 0), 86_400) * 10).rounded() / 10
+        return rounded == rounded.rounded() ? "\(Int(rounded)) s" : "\(rounded) s"
     }
 
     // MARK: Helpers
@@ -329,7 +416,7 @@ public actor DictationSession {
     /// Waits for the sample stream to end after the recorder stopped (bounded, in case a recorder never finishes it).
     private func drainCollector() async {
         guard let collector else { return }
-        let nanos = UInt64(max(0, options.streamDrainTimeout) * 1_000_000_000)
+        let nanos = sleepNanoseconds(options.streamDrainTimeout)
         let racers: [@Sendable () async -> Bool] = [
             { await collector.value; return true },
             { try? await Task.sleep(nanoseconds: nanos); return false },
@@ -408,6 +495,13 @@ public actor DictationSession {
 public enum DictationSessionError: Error, Sendable, Hashable {
     /// `start` was called on a session that already started. Make a new session per dictation.
     case alreadyStarted
+}
+
+/// Seconds as nanoseconds for `Task.sleep`, for any `Double`: 0 for a negative number or NaN, and capped at a day
+/// (`UInt64(seconds * 1e9)` traps on a number that doesn't fit, which a hand-edited timeout can be).
+func sleepNanoseconds(_ seconds: TimeInterval) -> UInt64 {
+    guard seconds > 0 else { return 0 }  // false for NaN too
+    return UInt64(min(seconds, 86_400) * 1_000_000_000)
 }
 
 /// Runs the operations at once and returns the first result; the others are cancelled (and not awaited, so an

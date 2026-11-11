@@ -37,6 +37,28 @@ func pipelineFixture(_ name: String) throws -> Data {
         #expect(Set(AppSettings.perAppModeSuggestions.map(\.bundleID)).count == AppSettings.perAppModeSuggestions.count)
     }
 
+    @Test func hugeTimeoutsAreClamped() throws {
+        // A hand-edited file: 1e30 s used to crash the app when the session turned it into nanoseconds.
+        let json = #"{"modes": {"tidy": {"timeout": 1e30}, "structure": {"timeout": 601}, "raw": {"timeout": -5}}}"#
+        let s = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        #expect(s.modes[.tidy]?.timeout == ModeConfig.maximumTimeout)
+        #expect(s.modes[.structure]?.timeout == 600)
+        #expect(s.modes[.raw]?.timeout == 0)  // not a valid timeout: the default stays
+        // Settings → Modes goes up to 120 s; that and anything else under the limit is kept as it is.
+        let fine = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"modes": {"tidy": {"timeout": 120}}}"#.utf8))
+        #expect(fine.modes[.tidy]?.timeout == 120)
+        #expect(fine.modes[.tidy]?.claudeModel == "haiku")
+
+        // Settings built in code are bounded where they are read.
+        var built = AppSettings()
+        built.modes[.tidy]?.timeout = .infinity
+        built.modes[.structure]?.timeout = .nan
+        #expect(built.config(for: .tidy).timeout == 600)
+        #expect(built.config(for: .structure).timeout == 0)
+        #expect(ModeConfig(id: .tidy, claudeModel: "haiku", timeout: -1).effectiveTimeout == 0)
+        #expect(ModeConfig(id: .tidy, claudeModel: "haiku", timeout: 20).effectiveTimeout == 20)
+    }
+
     @Test func roundTrip() throws {
         var s = AppSettings()
         s.engine = .whisperLargeV3Turbo

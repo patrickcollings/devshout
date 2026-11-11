@@ -134,16 +134,16 @@ import Testing
         }
     }
 
-    @Test func cancellationStopsTheChild() async throws {
+    // The child runs for 600 s unless cancelling stops it, so finishing inside the time limit is the proof. Not a
+    // stopwatch around the call: on a loaded 2-core CI runner that mostly measures the wait for a task thread.
+    @Test(.timeLimit(.minutes(3))) func cancellationStopsTheChild() async throws {
         let runner = self.runner
-        let request = shell("exec sleep 30")
+        let request = shell("exec sleep 600")
         let task = Task { try await runner.run(request) }
         try await Task.sleep(nanoseconds: 300_000_000)
-        let start = Date()
         task.cancel()
         await #expect(throws: CancellationError.self) {
             _ = try await task.value
         }
-        #expect(Date().timeIntervalSince(start) < 25)
     }
 }

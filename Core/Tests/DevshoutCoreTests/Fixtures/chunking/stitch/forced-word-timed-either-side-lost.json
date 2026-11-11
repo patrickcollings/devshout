@@ -1,0 +1,63 @@
+{
+  "description": "The two decodes time \"page\" either side of the middle of the overlap (13.708 s): the previous chunk has it starting just after (and drops it), the next just before. A fixed midpoint dropped it from both chunks and the word was lost.",
+  "expected": "Please update the page today.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Please update the page",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Please",
+          "start": 12.4,
+          "end": 12.7
+        },
+        {
+          "text": "update",
+          "start": 12.8,
+          "end": 13.2
+        },
+        {
+          "text": "the",
+          "start": 13.3,
+          "end": 13.45
+        },
+        {
+          "text": "page",
+          "start": 13.72,
+          "end": 14.1
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "the page today.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "the",
+          "start": 13.31,
+          "end": 13.45
+        },
+        {
+          "text": "page",
+          "start": 13.69,
+          "end": 14.1
+        },
+        {
+          "text": "today.",
+          "start": 14.3,
+          "end": 14.7
+        }
+      ]
+    }
+  ]
+}

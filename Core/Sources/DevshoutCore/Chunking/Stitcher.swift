@@ -6,10 +6,16 @@ import Foundation
 /// - **Natural cuts** (no overlap): joined with one space. All whitespace is collapsed and the ends are trimmed;
 ///   casing and punctuation are left alone.
 /// - **Forced cuts** (`overlapBefore` > 0, and the previous chunk really reaches into this one): the overlap is
-///   heard twice, so it is deduplicated. With word timings on both sides, the **midpoint rule**: words of the
-///   previous chunk starting at or after the middle of the overlap are dropped, and so are words of this chunk
-///   starting before it. Without timings, the longest run of up to `maxFallbackWords` words that ends the previous
-///   chunk and starts this one (ignoring case and punctuation) is removed from the previous chunk.
+///   heard twice, so it is deduplicated.
+///   - With word timings on both sides, by time. The previous chunk drops its words starting at or after the middle
+///     of the overlap (they sit against its cut, where a word may be clipped). This chunk then drops its leading
+///     words that the previous chunk's **last kept word** already covers: those starting before the middle of that
+///     word. Nothing is compared as text, so a word the two decodes wrote differently ("12%" and "twelve") is still
+///     kept once; and this chunk is cut where the previous one really stops rather than at a fixed time, so a word
+///     the two decodes time either side of the middle of the overlap is neither lost nor doubled.
+///   - Without timings, the longest run of up to `maxFallbackWords` words that ends the previous chunk and starts
+///     this one is removed from the previous chunk. Words are compared ignoring case and punctuation, and a number
+///     word equals its digits ("twelve" and "12%").
 /// - **Glued words** at a forced seam: when the last word of the previous chunk and the first word of this one
 ///   overlap as strings ("meeting" + "Meeting", "works" + "rks", "organ" + "organisation", "work" + "orks"), one
 ///   copy is kept. With timings, only when the two copies overlap in time (one utterance heard from both sides);
@@ -43,8 +49,10 @@ public enum Stitcher {
                 let midpoint = Double(transcript.startSample + overlapEnd) / 2 / Double(AudioFormat.sampleRate)
                 switch deduplicate(&previousTokens, &tokens, midpoint: midpoint) {
                 case .timed:
-                    // Glue only one utterance heard from both sides: the earlier copy still runs when the later one
-                    // starts. A word really said twice ("very very") starts after the first copy ends.
+                    // The time rule keeps a word when in doubt (a duplicate is better than a lost word), so a copy
+                    // of the last kept word can survive when the two decodes time it far apart. Glue only one
+                    // utterance heard from both sides: the earlier copy still runs when the later one starts. A
+                    // word really said twice ("very very") starts after the first copy ends.
                     if let last = previousTokens.last?.end, let first = tokens.first?.start, last > first {
                         glue(&previousTokens, &tokens)
                     }
@@ -138,11 +146,21 @@ public enum Stitcher {
 
     static func normalised(_ text: String) -> String { String(normalisedCharacters(text)) }
 
+    /// A word as the text rule compares it: `normalised`, with a number word as its digits, since an engine can
+    /// write the same spoken number either way in two decodes ("twelve." and "12%" are both "12").
+    static func comparable(_ text: String) -> String {
+        let word = normalised(text)
+        if let value = SpokenNumbers.units[word] ?? SpokenNumbers.teens[word] ?? SpokenNumbers.tens[word] {
+            return String(value)
+        }
+        return word
+    }
+
     // MARK: - Overlap
 
     /// How a forced seam was deduplicated.
     enum Dedupe: Equatable {
-        /// By the midpoint rule.
+        /// By word timings.
         case timed
         /// By the text rule, which removed a repeated run.
         case textMatched
@@ -155,14 +173,21 @@ public enum Stitcher {
         let timed = previous.allSatisfy { $0.start != nil } && next.allSatisfy { $0.start != nil }
         if timed {
             previous.removeAll { $0.start! >= midpoint }
-            next.removeAll { $0.start! < midpoint }
+            // Nothing kept (the previous chunk only has words in the second half of the overlap): the next chunk
+            // heard all of them, so it keeps everything.
+            guard let last = previous.last, let lastStart = last.start else { return .timed }
+            // A leading word of the next chunk is a second hearing of something already kept when it starts before
+            // the middle of the last kept word; the word that follows starts around that word's end. The middle
+            // leaves half the word's length for the two decodes to disagree by, in either direction.
+            let covered = (lastStart + max(last.end ?? lastStart, lastStart)) / 2
+            next.removeFirst(next.prefix { $0.start! < covered }.count)
             return .timed
         }
         let longest = min(maxFallbackWords, previous.count, next.count)
         guard longest > 0 else { return .textUnmatched }
         for length in stride(from: longest, through: 1, by: -1) {
-            let tail = previous.suffix(length).map { normalised($0.text) }
-            let head = next.prefix(length).map { normalised($0.text) }
+            let tail = previous.suffix(length).map { comparable($0.text) }
+            let head = next.prefix(length).map { comparable($0.text) }
             if tail == head {
                 previous.removeLast(length)
                 return .textMatched
