@@ -88,6 +88,16 @@ public struct CustomMode: Codable, Sendable, Hashable, Identifiable {
         return oneLine.isEmpty ? defaultName : String(oneLine.prefix(maximumNameLength))
     }
 
+    /// `name`, or `name 2`, `name 3`, … when one of `taken` already is that (compared without case).
+    public static func unusedName(_ name: String, among taken: [String]) -> String {
+        let base = displayName(for: name)
+        let taken = Set(taken.map { $0.lowercased() })
+        guard taken.contains(base.lowercased()) else { return base }
+        var number = 2
+        while taken.contains("\(base) \(number)".lowercased()) { number += 1 }
+        return "\(base) \(number)"
+    }
+
     public var hasInstructions: Bool {
         !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -174,6 +184,23 @@ extension Array where Element == ModeDescriptor {
     }
 }
 
+// MARK: - Hotkeys
+
+extension ModeID {
+    /// The name under which this mode's own hotkey is registered and stored (KeyboardShortcuts keeps it in
+    /// UserDefaults as `KeyboardShortcuts_<name>`). The built-ins keep the names they have always had, so hotkeys
+    /// set before custom modes existed still work; a custom mode's name is made from its id, which holds only
+    /// letters, digits and hyphens (KeyboardShortcuts forbids a dot in a name).
+    public var hotkeyName: String {
+        switch self {
+        case .raw: "dictateRaw"
+        case .tidy: "dictateTidy"
+        case .structure: "dictateStructure"
+        default: "dictateMode_" + rawValue
+        }
+    }
+}
+
 // MARK: - Settings
 
 extension AppSettings {
@@ -209,8 +236,8 @@ extension AppSettings {
         dropReferencesToMissingModes()
     }
 
-    /// Makes `defaultMode` and `perAppModes` name only modes that exist.
-    mutating func dropReferencesToMissingModes() {
+    /// Makes `defaultMode` and `perAppModes` name only modes that exist. Call it after replacing `customModes`.
+    public mutating func dropReferencesToMissingModes() {
         if !hasMode(defaultMode) { defaultMode = AppSettings.fallbackMode }
         perAppModes = perAppModes.filter { hasMode($0.value) }
     }
@@ -220,12 +247,7 @@ extension AppSettings {
 
     /// `name`, or `name 2`, `name 3`, … when a mode (built-in or custom) already has it.
     public func unusedModeName(_ name: String) -> String {
-        let base = CustomMode.displayName(for: name)
-        let taken = Set(modeDescriptors.map { $0.name.lowercased() })
-        guard taken.contains(base.lowercased()) else { return base }
-        var number = 2
-        while taken.contains("\(base) \(number)".lowercased()) { number += 1 }
-        return "\(base) \(number)"
+        CustomMode.unusedName(name, among: modeDescriptors.map(\.name))
     }
 }
 

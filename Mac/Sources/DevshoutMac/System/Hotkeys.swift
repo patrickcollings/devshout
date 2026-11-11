@@ -25,9 +25,25 @@ extension KeyboardShortcuts.Name {
     public static let dictateTidy = Self("dictateTidy")
 }
 
-/// The four dictation hotkeys. Use `name` with `KeyboardShortcuts.Recorder(_:name:)` in Settings and onboarding.
-public enum DictationHotkey: String, CaseIterable, Sendable, Hashable {
+/// The dictation hotkeys: the four fixed ones, and one for each mode the user made (Settings → Modes).
+/// Use `name` with `KeyboardShortcuts.Recorder(_:name:)` in Settings and onboarding.
+public enum DictationHotkey: Sendable, Hashable {
     case dictate, dictateStructure, dictateRaw, dictateTidy
+    /// A custom mode's own hotkey. It has no shortcut until the user records one.
+    case custom(ModeID)
+
+    /// The hotkeys that always exist. Their names are fixed, so shortcuts stored under them keep working.
+    public static let builtIns: [DictationHotkey] = [.dictate, .dictateStructure, .dictateRaw, .dictateTidy]
+
+    /// A mode's own hotkey.
+    public init(mode: ModeID) {
+        switch mode {
+        case .structure: self = .dictateStructure
+        case .raw: self = .dictateRaw
+        case .tidy: self = .dictateTidy
+        default: self = .custom(mode)
+        }
+    }
 
     public var name: KeyboardShortcuts.Name {
         switch self {
@@ -35,6 +51,8 @@ public enum DictationHotkey: String, CaseIterable, Sendable, Hashable {
         case .dictateStructure: .dictateStructure
         case .dictateRaw: .dictateRaw
         case .dictateTidy: .dictateTidy
+        // Made from the mode's id (`ModeID.hotkeyName`), with no initial shortcut.
+        case .custom(let mode): KeyboardShortcuts.Name(mode.hotkeyName)
         }
     }
 
@@ -45,16 +63,18 @@ public enum DictationHotkey: String, CaseIterable, Sendable, Hashable {
         case .dictateStructure: .structure
         case .dictateRaw: .raw
         case .dictateTidy: .tidy
+        case .custom(let mode): mode
         }
     }
 
-    /// Label for Settings and onboarding.
+    /// Label for Settings and onboarding. A custom mode's own name isn't known here.
     public var title: String {
         switch self {
         case .dictate: "Dictate in the app's default mode"
         case .dictateStructure: "Dictate in Structure"
         case .dictateRaw: "Dictate in Raw"
         case .dictateTidy: "Dictate in Tidy"
+        case .custom: "Dictate in this mode"
         }
     }
 }
@@ -89,6 +109,10 @@ public typealias HotkeyAction = TapHoldAction<DictationHotkey>
 /// ```
 /// Esc is registered only between `.start` and the end of that recording.
 ///
+/// Custom modes: call `setCustomModes(_:)` with the ids in the settings at launch and after every change. Their
+/// hotkeys get the same handlers as the fixed four, so tap-to-toggle, hold-to-talk and switching mode while
+/// recording behave the same.
+///
 /// The centre keeps its own idea of "recording". Whenever the pipeline's state differs from it (it refused a
 /// `.start` because it was still busy, the overlay's Stop or Cancel was used, a stage failed), call
 /// `recordingEnded()` so the next press starts rather than stops.
@@ -108,6 +132,9 @@ public final class HotkeyCenter {
     public var activeHotkey: DictationHotkey? { classifier.activeTrigger }
     public private(set) var isStarted = false
 
+    /// The custom modes whose hotkeys are handled, as last given to `setCustomModes`.
+    public private(set) var customModes: [ModeID] = []
+
     private var classifier: TapHoldClassifier<DictationHotkey>
     private var continuations: [UUID: AsyncStream<HotkeyAction>.Continuation] = [:]
     private var escapeTask: Task<Void, Never>?
@@ -121,13 +148,39 @@ public final class HotkeyCenter {
     public func start() {
         guard !isStarted else { return }
         isStarted = true
-        for hotkey in DictationHotkey.allCases {
-            KeyboardShortcuts.onKeyDown(for: hotkey.name) { [weak self] in
-                self?.handle(hotkey, .down)
-            }
-            KeyboardShortcuts.onKeyUp(for: hotkey.name) { [weak self] in
-                self?.handle(hotkey, .up)
-            }
+        for hotkey in allHotkeys { register(hotkey) }
+    }
+
+    /// The custom modes that exist now. Hotkeys of new ones are registered (once `start()` has run); for ones
+    /// that have gone, the handlers are removed and the stored shortcut is forgotten, so a deleted mode's key
+    /// combination is free again and nothing is left behind in UserDefaults.
+    public func setCustomModes(_ modes: [ModeID]) {
+        var next: [ModeID] = []
+        for mode in modes where mode.isCustom && !next.contains(mode) { next.append(mode) }
+        let removed = customModes.filter { !next.contains($0) }
+        let added = next.filter { !customModes.contains($0) }
+        customModes = next
+        for mode in removed {
+            let name = DictationHotkey.custom(mode).name
+            KeyboardShortcuts.removeHandler(for: name)
+            KeyboardShortcuts.reset(name)
+        }
+        if isStarted {
+            for mode in added { register(.custom(mode)) }
+        }
+    }
+
+    private var allHotkeys: [DictationHotkey] {
+        DictationHotkey.builtIns + customModes.map { .custom($0) }
+    }
+
+    private func register(_ hotkey: DictationHotkey) {
+        let name = hotkey.name
+        KeyboardShortcuts.onKeyDown(for: name) { [weak self] in
+            self?.handle(hotkey, .down)
+        }
+        KeyboardShortcuts.onKeyUp(for: name) { [weak self] in
+            self?.handle(hotkey, .up)
         }
     }
 
@@ -135,7 +188,7 @@ public final class HotkeyCenter {
     public func stop() {
         guard isStarted else { return }
         isStarted = false
-        for hotkey in DictationHotkey.allCases {
+        for hotkey in allHotkeys {
             KeyboardShortcuts.removeHandler(for: hotkey.name)
         }
         setEscapeEnabled(false)

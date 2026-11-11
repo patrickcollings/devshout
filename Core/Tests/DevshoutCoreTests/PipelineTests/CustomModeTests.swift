@@ -28,6 +28,18 @@ import Testing
         #expect(try JSONDecoder().decode([ModeID].self, from: data) == [id])
     }
 
+    @Test func hotkeyNames() throws {
+        // The built-ins' names are the UserDefaults keys Patrick's hotkeys are already stored under.
+        #expect(ModeID.raw.hotkeyName == "dictateRaw")
+        #expect(ModeID.tidy.hotkeyName == "dictateTidy")
+        #expect(ModeID.structure.hotkeyName == "dictateStructure")
+        let id = try #require(ModeID(rawValue: "custom-11111111-aaaa-4bbb-8ccc-000000000001"))
+        #expect(id.hotkeyName == "dictateMode_custom-11111111-aaaa-4bbb-8ccc-000000000001")
+        // KeyboardShortcuts uses the name as a key path: no dots, whatever the id.
+        #expect(!ModeID.custom().hotkeyName.contains("."))
+        #expect(ModeID.custom().hotkeyName != ModeID.custom().hotkeyName)
+    }
+
     @Test(arguments: ["", "shout", "Tidy", "custom-", "custom", "custom-a.b", "custom-a b", "custom-a/b",
                       "custom-é", "custom-" + String(repeating: "a", count: 65)])
     func stringsThatAreNotModes(raw: String) {
