@@ -1,0 +1,58 @@
+{
+  "description": "The other way round: the previous chunk has its last word starting just before the middle of the overlap (13.708 s) and keeps it; the next has it starting just after, and misheard as \"rapport\". A fixed midpoint kept both.",
+  "expected": "Send the report now.",
+  "chunks": [
+    {
+      "index": 0,
+      "startSample": 0,
+      "endSample": 227328,
+      "overlapBefore": 0,
+      "text": "Send the report",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "Send",
+          "start": 12.9,
+          "end": 13.1
+        },
+        {
+          "text": "the",
+          "start": 13.2,
+          "end": 13.3
+        },
+        {
+          "text": "report",
+          "start": 13.69,
+          "end": 14.1
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startSample": 211328,
+      "endSample": 435000,
+      "overlapBefore": 16000,
+      "text": "the rapport now.",
+      "engine": "parakeet-tdt-0.6b-v3",
+      "elapsed": 0.1,
+      "words": [
+        {
+          "text": "the",
+          "start": 13.22,
+          "end": 13.3
+        },
+        {
+          "text": "rapport",
+          "start": 13.72,
+          "end": 14.1
+        },
+        {
+          "text": "now.",
+          "start": 14.3,
+          "end": 14.6
+        }
+      ]
+    }
+  ]
+}

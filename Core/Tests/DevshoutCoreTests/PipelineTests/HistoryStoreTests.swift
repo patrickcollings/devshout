@@ -178,6 +178,49 @@ import Testing
         #expect(Set(store.list().map(\.id)) == [orphan, done])
     }
 
+    @Test func recoveryCountsAudioWrittenAfterTheLastHeaderPatch() throws {
+        let temp = try TempDir()
+        defer { temp.remove() }
+        let (store, _) = makeStore(temp)
+        // The recorder patched the header at 2 s, wrote another 1.5 s, and then the app was killed.
+        let (id, audio) = try store.newRecordingFolder()
+        var data = TestWAV.data(sampleCount: 32_000)
+        data.append(Data(count: 24_000 * 2))
+        try data.write(to: audio)
+        #expect(WAVInfo.read(audio)?.duration == 2)  // what the stale header says
+
+        let recovered = store.recoverOrphans()
+        #expect(recovered.map(\.id) == [id])
+        #expect(recovered.first?.duration == 3.5)
+        #expect(try store.load(id)?.duration == 3.5)
+        // The file itself is fixed, so re-transcribing it or opening it elsewhere gets the tail too.
+        let header = try WavFormat.parseHeader(Data(contentsOf: audio))
+        #expect(header.dataSizeFromHeader)
+        #expect(header.frameCount == 56_000)
+        #expect(try Data(contentsOf: audio).count == data.count)
+    }
+
+    @Test func recoveryLeavesAForeignAudioFileAlone() throws {
+        let temp = try TempDir()
+        defer { temp.remove() }
+        let (store, _) = makeStore(temp)
+        // A WAV with an extra chunk before the data isn't the recorder's 44-byte layout: timed, not rewritten.
+        let (id, audio) = try store.newRecordingFolder()
+        let plain = TestWAV.data(sampleCount: 16_000)
+        var data = Data(plain.prefix(36))
+        data.append(contentsOf: Array("LIST".utf8) + [4, 0, 0, 0] + Array("INFO".utf8))
+        data.append(plain.suffix(from: 36))
+        try data.write(to: audio)
+        #expect(store.recoverOrphans().first?.duration == 1)
+        #expect(try store.load(id)?.status == .recovered)
+        #expect(try Data(contentsOf: audio) == data)
+        // Not audio at all: still recovered, with no duration.
+        let (other, otherAudio) = try store.newRecordingFolder()
+        try Data("not a wav".utf8).write(to: otherAudio)
+        #expect(store.recoverOrphans().map(\.id) == [other])
+        #expect(try store.load(other)?.duration == 0)
+    }
+
     @Test func tolerantRecordDecoding() throws {
         let r = try HistoryStore.decoder.decode(Recording.self, from: pipelineFixture("record-tolerant"))
         #expect(r.id == UUID(uuidString: "5A3C1F0E-2B7D-4C1A-9E8F-0123456789AB"))
@@ -228,6 +271,11 @@ import Testing
     @Test func notAWAV() {
         #expect(WAVInfo.parse(header: Data("hello world, not a wav".utf8), fileSize: 22) == nil)
         #expect(WAVInfo.parse(header: Data(), fileSize: 0) == nil)
+        // The header can be a slice of a larger buffer, and the file can be shorter than the header claims.
+        let padded = Data([0, 0, 0]) + TestWAV.data(sampleCount: 16_000)
+        #expect(WAVInfo.parse(header: padded.dropFirst(3).prefix(44), fileSize: 44 + 32_000)?.duration == 1)
+        #expect(WAVInfo.parse(header: TestWAV.data(sampleCount: 16_000).prefix(44), fileSize: 44 + 16_000)?.duration == 0.5)
+        #expect(WAVInfo.parse(header: TestWAV.data(sampleCount: 16_000).prefix(44), fileSize: 20)?.duration == 0)
     }
 
     @Test func readsFromDisk() throws {

@@ -124,8 +124,9 @@ public struct HistoryStore: Sendable {
     // MARK: Recovery
 
     /// On launch: every folder with `audio.wav` but no `record.json` (the app quit or crashed mid-dictation) gets a
-    /// record with status `recovered`, dated from the folder and timed from the WAV header. Empty folders are
-    /// removed. Pass the ids of recordings in progress in `excluding` (normally none at launch).
+    /// record with status `recovered`, dated from the file and timed from the audio on disk: the WAV header is
+    /// repaired first, because the recorder only patches its sizes every 2 s, so after a crash it undercounts the
+    /// end of the recording (and anything reading the file later would drop that tail). Empty folders are removed. Pass the ids of recordings in progress in `excluding` (normally none at launch).
     /// Returns the recovered recordings.
     @discardableResult
     public func recoverOrphans(excluding: Set<UUID> = []) -> [Recording] {
@@ -146,10 +147,12 @@ public struct HistoryStore: Sendable {
             let createdAt = (attributes?[.creationDate] as? Date)
                 ?? (attributes?[.modificationDate] as? Date)
                 ?? dateSource.now()
+            // Not one of the recorder's own files (or not writable): leave it alone and take what the header says.
+            let duration = (try? WavFileWriter.repairHeader(at: audio)) ?? WAVInfo.read(audio)?.duration ?? 0
             let recording = Recording(
                 id: id,
                 createdAt: createdAt,
-                duration: WAVInfo.read(audio)?.duration ?? 0,
+                duration: duration,
                 status: .recovered,
                 errorMessage: "devshout quit before this recording finished. The audio was kept."
             )

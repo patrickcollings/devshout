@@ -18,6 +18,10 @@ public struct ChunkPlannerConfig: Codable, Sendable, Hashable {
     /// After a forced cut, the next chunk starts this long before the cut, so words on the cut are heard twice.
     public var forcedCutOverlap: TimeInterval
     /// A chunk with less speech than this is not transcribed (stops Whisper hallucinating over silence).
+    ///
+    /// The default is just under one VAD frame (4,096 samples = 0.256 s), so a chunk with a single speech frame is
+    /// kept: a one-word dictation ("yes") is often all in one frame, and at 0.3 s it was dropped as "No speech was
+    /// detected." A longer blip the VAD takes for speech costs one short transcription, which comes back empty.
     public var minSpeechToTranscribe: TimeInterval
     /// Audio kept either side of the speech in each chunk, so first and last phonemes aren't clipped.
     public var padding: TimeInterval
@@ -28,7 +32,7 @@ public struct ChunkPlannerConfig: Codable, Sendable, Hashable {
                 speechExitOffset: Float = 0.15,
                 forcedCutSearchWindow: TimeInterval = 2.0,
                 forcedCutOverlap: TimeInterval = 1.0,
-                minSpeechToTranscribe: TimeInterval = 0.3,
+                minSpeechToTranscribe: TimeInterval = 0.25,
                 padding: TimeInterval = 0.15) {
         self.minSpeechBeforeCut = minSpeechBeforeCut
         self.cutSilence = cutSilence

@@ -11,6 +11,21 @@ final class Locked<Value>: @unchecked Sendable {
     func mutate<R>(_ body: (inout Value) -> R) -> R { lock.lock(); defer { lock.unlock() }; return body(&value) }
 }
 
+/// A call that never returns, whatever happens to its task: a stuck Core ML call, a `claude` that never answers.
+///
+/// It really is for ever (nothing resumes it), so a test's result can't depend on how long the hang lasts compared
+/// with a timer that may fire late on a busy machine. The continuations are kept so that they aren't reported as
+/// leaked; the suspended tasks cost nothing and end with the test process.
+enum Hang {
+    private static let parked = Locked<[CheckedContinuation<Never, Never>]>([])
+
+    static func forever() async -> Never {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Never, Never>) in
+            parked.mutate { $0.append(continuation) }
+        }
+    }
+}
+
 struct FakeError: Error, LocalizedError, Hashable {
     var message: String
     var errorDescription: String? { message }
@@ -109,23 +124,49 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
     let id: EngineID
     let maxChunkDuration: TimeInterval = 14.5
     let acceptsVocabularyPrompt: Bool
-    let failAtIndex: Int?
+    /// What happens on each call for a chunk index, in order; when they run out (or for other chunks) the call
+    /// succeeds. `[.fail, .fail]` fails the chunk and its retry; `[.fail]` fails once and then works.
+    let script: [Int: [Step]]
     let calls = Locked<[(index: Int, context: TranscriptionContext)]>([])
 
-    init(id: EngineID = .parakeetV3, acceptsVocabularyPrompt: Bool = false, failAtIndex: Int? = nil) {
+    enum Step: Sendable {
+        case fail
+        /// Never answers, like a stuck Core ML call. Ignores cancellation.
+        case hang
+        /// Answers with no text (silence, or a cough).
+        case empty
+    }
+
+    init(id: EngineID = .parakeetV3, acceptsVocabularyPrompt: Bool = false, failAtIndex: Int? = nil,
+         script: [Int: [Step]] = [:]) {
         self.id = id
         self.acceptsVocabularyPrompt = acceptsVocabularyPrompt
-        self.failAtIndex = failAtIndex
+        var script = script
+        if let failAtIndex { script[failAtIndex] = [.fail, .fail] }
+        self.script = script
     }
 
     func prepare(progress: @escaping @Sendable (ModelProgress) -> Void) async throws {}
     func unload() async {}
 
     func transcribe(_ chunk: AudioChunk, context: TranscriptionContext) async throws -> ChunkTranscript {
-        calls.mutate { $0.append((chunk.index, context)) }
-        if chunk.index == failAtIndex { throw FakeError(message: "engine exploded") }
+        let attempt = calls.mutate { calls -> Int in
+            calls.append((chunk.index, context))
+            return calls.filter { $0.index == chunk.index }.count - 1
+        }
+        var text = "part \(chunk.index)"
+        if let steps = script[chunk.index], attempt < steps.count {
+            switch steps[attempt] {
+            case .fail:
+                throw FakeError(message: "engine exploded")
+            case .hang:
+                await Hang.forever()
+            case .empty:
+                text = ""
+            }
+        }
         return ChunkTranscript(index: chunk.index, startSample: chunk.startSample, endSample: chunk.endSample,
-                               text: "part \(chunk.index)", engine: id, elapsed: 0.01)
+                               text: text, engine: id, elapsed: 0.01)
     }
 
     var calledIndices: [Int] { calls.get().map(\.index) }
@@ -150,14 +191,8 @@ final class FakeCleaner: TextCleaner, @unchecked Sendable {
     static func failing(_ error: CleanError) -> FakeCleaner { FakeCleaner { _, _, _ in throw error } }
 
     static func hanging() -> FakeCleaner {
-        FakeCleaner { raw, mode, _ in
-            // Ignores cancellation on purpose: the session mustn't wait for it.
-            // A dispatch timer, not Task.sleep: after cancellation Task.sleep throws at once, which would spin.
-            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                DispatchQueue.global().asyncAfter(deadline: .now() + 10) { c.resume() }
-            }
-            return CleanResult(text: "too late", model: mode.claudeModel, elapsed: 10)
-        }
+        // Ignores cancellation on purpose: the session mustn't wait for it.
+        FakeCleaner { _, _, _ in await Hang.forever() }
     }
 }
 
@@ -190,7 +225,8 @@ struct SessionHarness {
          settings: AppSettings = AppSettings(),
          options: DictationOptions = DictationOptions(),
          chunkOrder: [Int] = [0, 1, 2],
-         planError: FakeError? = nil) throws {
+         planError: FakeError? = nil,
+         planHangs: Bool = false) throws {
         temp = try TempDir()
         self.recorder = recorder
         self.engine = engine
@@ -209,8 +245,10 @@ struct SessionHarness {
             history: history,
             planChunks: { samples in
                 planned.mutate { $0.append(samples.count) }
+                if planHangs { await Hang.forever() }  // a stuck VAD call
                 if let planError { throw planError }
-                return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 100, endSample: $0 * 100 + 100,
+                // Each chunk is 14.5 s of the recording, as Parakeet's are.
+                return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 232_000, endSample: ($0 + 1) * 232_000,
                                                    samples: [Float](repeating: 0, count: 100)) }
             },
             stitch: { transcripts in

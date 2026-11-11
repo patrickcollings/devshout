@@ -26,16 +26,81 @@ import Testing
         #expect(TidyLengthCheck.failureReason(raw: "what is two plus two", output: "Four.") != nil)
     }
 
+    /// "w0 w1 … " with distinct words, so nothing counts as a repeat.
+    func numbered(_ range: Range<Int>) -> String { range.map { "word\($0)" }.joined(separator: " ") }
+
     @Test func boundaries() {
-        let ten = Array(repeating: "word", count: 10).joined(separator: " ")
-        let seven = Array(repeating: "word", count: 7).joined(separator: " ")
-        let six = Array(repeating: "word", count: 6).joined(separator: " ")
-        let thirteen = Array(repeating: "word", count: 13).joined(separator: " ")
-        let fourteen = Array(repeating: "word", count: 14).joined(separator: " ")
-        #expect(TidyLengthCheck.failureReason(raw: ten, output: seven) == nil)
-        #expect(TidyLengthCheck.failureReason(raw: ten, output: thirteen) == nil)
-        #expect(TidyLengthCheck.failureReason(raw: ten, output: six) != nil)
-        #expect(TidyLengthCheck.failureReason(raw: ten, output: fourteen) != nil)
+        let twenty = numbered(0..<20)
+        // 70% and over: the length is enough, wherever the output stops.
+        #expect(TidyLengthCheck.failureReason(raw: twenty, output: numbered(0..<14)) == nil)
+        // 50–70%: only when it still reaches the end.
+        #expect(TidyLengthCheck.failureReason(raw: twenty, output: numbered(0..<5) + " " + numbered(12..<20)) == nil)
+        #expect(TidyLengthCheck.failureReason(raw: twenty, output: numbered(10..<20)) == nil)
+        let cutOff = try? #require(TidyLengthCheck.failureReason(raw: twenty, output: numbered(0..<13)))
+        #expect(cutOff?.contains("cut off") == true)
+        // Under 50%: never.
+        let summary = try? #require(TidyLengthCheck.failureReason(raw: twenty, output: numbered(11..<20)))
+        #expect(summary?.contains("summarised") == true)
+        // Up to 130%.
+        #expect(TidyLengthCheck.failureReason(raw: twenty, output: numbered(0..<26)) == nil)
+        #expect(TidyLengthCheck.failureReason(raw: twenty, output: numbered(0..<27))?.contains("longer") == true)
+    }
+
+    /// A real ramble: fillers, stammers, restarts and self-corrections. 97 words, 88 without fillers and stammers.
+    let ramble = """
+        okay so um what I what I wanted to say is that the the procurement page um it loads really slowly no not \
+        slowly it it times out when you open it from the from the dashboard and uh I think I think the problem is \
+        the supplier query no sorry the project query because it it joins every every credit so can you um can you \
+        add an index on the project id or no wait first check the query plan and then add the index and uh tell me \
+        how long it takes after that
+        """
+
+    @Test func aRamblingDictationCanShrinkALot() {
+        // Everything said is still there; only what Tidy is told to remove has gone. 46 words: 47% of the raw
+        // words (the old 70% rule rejected it and the ramble was pasted instead) and 52% of the non-filler ones.
+        let tidied = """
+            The procurement page times out when you open it from the dashboard. I think the problem is the project \
+            query, because it joins every credit. Can you first check the query plan and then add the index, and tell \
+            me how long it takes after that?
+            """
+        #expect(TidyLengthCheck.wordCount(ramble) == 97)
+        #expect(TidyLengthCheck.contentWordCount(ramble) == 88)
+        #expect(TidyLengthCheck.wordCount(tidied) == 46)
+        #expect(TidyLengthCheck.failureReason(raw: ramble, output: tidied) == nil)
+    }
+
+    @Test func aRambleCutOffPartWayIsStillCaught() throws {
+        // The same length as the good result, but it is the first part of the dictation, lightly tidied.
+        let cutOff = """
+            What I wanted to say is that the procurement page loads really slowly, no, not slowly, it times out when \
+            you open it from the dashboard. I think the problem is the supplier query, no sorry, the project query, \
+            because it joins every credit, so can
+            """
+        #expect(TidyLengthCheck.wordCount(cutOff) == 46)
+        let reason = try #require(TidyLengthCheck.failureReason(raw: ramble, output: cutOff))
+        #expect(reason.contains("cut off"))
+        #expect(reason.contains("46 words from 97"))
+    }
+
+    @Test func aSummaryOfARambleIsStillCaught() throws {
+        let summary = "The procurement page times out because of the project query. Check the query plan, add an index on the project id and report the timing."
+        let reason = try #require(TidyLengthCheck.failureReason(raw: ramble, output: summary))
+        #expect(reason.contains("summarised"))
+    }
+
+    @Test func fillersAndStammersAreNotCounted() {
+        #expect(TidyLengthCheck.contentWordCount("um, so the the plan is, uh, like, simple. Erm... yes yes yes") == 7)
+        // Not fillers: real words that happen to repeat further apart, and "like" or "you know".
+        #expect(TidyLengthCheck.contentWordCount("I like it, you know, I like it") == 8)
+        #expect(TidyLengthCheck.contentWordCount("") == 0)
+    }
+
+    @Test func reachingTheEnd() {
+        let raw = "please move the meeting with the client to Tuesday afternoon no sorry I mean Wednesday morning"
+        #expect(TidyLengthCheck.reachesTheEnd(raw: raw, output: "Please move the client meeting to Wednesday morning."))
+        #expect(!TidyLengthCheck.reachesTheEnd(raw: raw, output: "Please move the meeting with the client"))
+        // Too few distinctive words to judge.
+        #expect(TidyLengthCheck.reachesTheEnd(raw: "so it is to be or not", output: "anything"))
     }
 
     @Test func wordCountIgnoresPunctuationOnlyTokens() {
