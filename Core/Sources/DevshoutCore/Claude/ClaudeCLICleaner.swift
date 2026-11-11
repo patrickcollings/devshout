@@ -39,8 +39,12 @@ public struct ClaudeCLICleaner: TextCleaner {
     }
 
     public func clean(_ raw: String, mode: ModeConfig, glossary: String) async throws -> CleanResult {
-        guard mode.id.usesClaude, let systemPrompt = PromptBuilder.systemPrompt(mode: mode, glossary: glossary) else {
+        guard mode.id.usesClaude else {
             throw CleanError.rejectedOutput(reason: "\(mode.id.displayName) mode doesn't use Claude")
+        }
+        guard let systemPrompt = PromptBuilder.systemPrompt(mode: mode, glossary: glossary) else {
+            // A custom mode with blank instructions, or one deleted while its dictation was running.
+            throw CleanError.rejectedOutput(reason: Self.noInstructionsReason)
         }
         guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CleanError.rejectedOutput(reason: "Nothing to clean up: the transcript is empty")
@@ -107,19 +111,50 @@ public struct ClaudeCLICleaner: TextCleaner {
             throw error
         }
 
-        var warnings: [String] = []
-        switch mode.id {
-        case .tidy:
+        let warnings: [String]
+        switch OutputChecks.forMode(mode.id) {
+        case .none:
+            warnings = []
+        case .length:
             if let reason = TidyLengthCheck.failureReason(raw: raw, output: text) {
                 throw CleanError.rejectedOutput(reason: reason)
             }
-        case .structure:
+            warnings = []
+        case .coverage:
             warnings = CoverageCheck.warnings(raw: raw, output: text,
                                               glossaryTerms: CoverageCheck.glossaryTerms(in: glossary))
-        default:
-            break
         }
 
         return CleanResult(text: text, model: mode.claudeModel, elapsed: run.elapsed, warnings: warnings)
+    }
+
+    /// Follows "Claude's output was rejected: " in the pill and in History.
+    static let noInstructionsReason = "nothing was sent, because this mode has no instructions (Settings → Modes)"
+}
+
+/// Which check Claude's output gets, per mode. An empty result is refused for every mode before this is reached
+/// (`ClaudeResultParser`, and again in `DictationSession`), so a mode can never paste nothing in place of the raw
+/// text.
+public enum OutputChecks: Sendable, Hashable {
+    case none
+    /// `TidyLengthCheck`: the output is rejected (raw text pasted) when it is much shorter or longer than the
+    /// dictation.
+    case length
+    /// `CoverageCheck`: numbers, ticket IDs, file paths and glossary terms that went missing become a warning in
+    /// History. Never blocks the paste.
+    case coverage
+
+    /// - Tidy keeps the speaker's words, so its length is checked.
+    /// - Structure rewrites but must keep every fact, so coverage is checked.
+    /// - A custom mode is a rewrite of unknown shape: a commit message is rightly a fraction of the ramble behind
+    ///   it and an email can be longer than its dictation, so no length is wrong and the length check would only
+    ///   throw good results away. Facts matter in every rewrite, so it gets the coverage warning, which costs
+    ///   nothing when it is wrong.
+    public static func forMode(_ mode: ModeID) -> OutputChecks {
+        switch mode {
+        case .raw: .none
+        case .tidy: .length
+        default: .coverage
+        }
     }
 }
