@@ -250,6 +250,17 @@ final class GlossaryViewModel: ObservableObject {
         errorMessage = nil
     }
 
+    /// Wiring: glossary.md was changed and saved from outside the editor ("Add correction…" in History) and now
+    /// holds `saved`. The editor shows it; when it has unsaved edits they are kept, with the same `edit` made to
+    /// them, and stay unsaved.
+    func savedElsewhere(_ saved: String, edit: (String) -> String) {
+        text = isDirty ? edit(text) : saved
+        savedText = saved
+        counts = parse(text)
+        lastSaved = Date()
+        errorMessage = nil
+    }
+
     func saveChanges() {
         do {
             try save(text)
@@ -349,18 +360,193 @@ final class HistoryViewModel: ObservableObject {
         /// Delete one recording (audio and text). The view asks for confirmation first.
         var delete: @MainActor (UUID) -> Void = { _ in }
         var showInFinder: @MainActor (UUID) -> Void = { _ in }
+        /// Play the recording's audio from the start. The wiring answers with `playbackStarted`,
+        /// `playbackUnavailable` and, at the end of the file, `playbackEnded`.
+        var play: @MainActor (UUID) -> Void = { _ in }
+        /// Stop whatever is playing. Called whether or not anything is, so it must be safe at any time.
+        var stopPlayback: @MainActor () -> Void = {}
+        /// Send the recording's transcript to Claude again in this mode and add the result to the recording as a
+        /// new version. Nothing is pasted. The wiring answers with `rerunStarted`, then `rerunFinished`,
+        /// `rerunFailed` or `rerunCancelled`.
+        var rerun: @MainActor (UUID, ModeID) -> Void = { _, _ in }
+        var cancelRerun: @MainActor (UUID) -> Void = { _ in }
+        /// Add `heard` to the glossary as a mishearing of `term` (on its entry, or on a new one of this kind) and
+        /// save glossary.md. Throws when the file can't be read or written.
+        var addCorrection: @MainActor (_ heard: String, _ term: String, _ kind: GlossaryEditor.CorrectionKind) throws
+            -> GlossaryEditor.CorrectionOutcome = { _, _, _ in .nothingToAdd }
+        /// The glossary's spelling of the entry a correction for this term would go on, if it has one.
+        var existingGlossaryTerm: @MainActor (String) -> String? = { _ in nil }
     }
 
+    /// The modes a recording can be re-run in (the ones that use Claude).
+    static let rerunModes: [ModeID] = [.tidy, .structure]
+
     /// Newest first.
-    @Published var recordings: [Recording]
+    @Published var recordings: [Recording] {
+        didSet { stopPlaybackUnlessSelected() }
+    }
+    /// The search field's text. Blank shows everything.
+    @Published var searchText: String {
+        didSet { stopPlaybackUnlessSelected() }
+    }
+    /// The row picked in the list. Nil (nothing picked yet, or the picked one was filtered out or deleted) shows
+    /// the first visible recording.
+    @Published var selection: UUID? {
+        didSet { stopPlaybackUnlessSelected() }
+    }
+    @Published private(set) var playback: HistoryPlayback = .idle
+    /// Re-runs in progress, and the last failure, per recording.
+    @Published private(set) var reruns: [UUID: HistoryRerunState] = [:]
+    /// What the last "Add correction…" did.
+    @Published private(set) var correctionNotice: HistoryCorrectionNotice?
     var actions: Actions
 
-    init(recordings: [Recording] = [], actions: Actions = Actions()) {
+    init(recordings: [Recording] = [], searchText: String = "", selection: UUID? = nil, actions: Actions = Actions()) {
         self.recordings = recordings
+        self.searchText = searchText
+        self.selection = selection
         self.actions = actions
+    }
+
+    /// The recordings that match the search, newest first.
+    var visibleRecordings: [Recording] { recordings.matching(search: searchText) }
+
+    /// The recording the detail pane shows.
+    var selectedRecording: Recording? {
+        let visible = visibleRecordings
+        return visible.first { $0.id == selection } ?? visible.first
     }
 
     func reload() { actions.reload() }
     func delete(_ id: UUID) { actions.delete(id) }
     func showInFinder(_ id: UUID) { actions.showInFinder(id) }
+
+    // MARK: Playback
+
+    func isPlaying(_ id: UUID) -> Bool { playback == .playing(id) }
+
+    /// Why this recording's audio couldn't be played, after a try that failed.
+    func playbackProblem(for id: UUID) -> String? {
+        if case .unavailable(id, let message) = playback { return message }
+        return nil
+    }
+
+    /// The Play / Stop button.
+    func togglePlayback(_ id: UUID) {
+        if isPlaying(id) {
+            stopPlayback()
+        } else {
+            playback = .idle
+            actions.play(id)
+        }
+    }
+
+    /// Stops the audio. Called from explicit events as well as the Stop button: another recording is shown, the
+    /// Settings window closes or moves to another tab, a dictation starts.
+    func stopPlayback() {
+        actions.stopPlayback()
+        if case .playing = playback { playback = .idle }
+    }
+
+    /// The audio belongs to the recording on show: anything else on show means silence (and no stale message).
+    private func stopPlaybackUnlessSelected() {
+        let shown = selectedRecording?.id
+        switch playback {
+        case .idle: break
+        case .playing(let id): if id != shown { stopPlayback() }
+        case .unavailable(let id, _): if id != shown { playback = .idle }
+        }
+        // Likewise what was said about a glossary correction made from another recording.
+        if let notice = correctionNotice, notice.recordingID != shown { correctionNotice = nil }
+    }
+
+    // Wiring → model.
+
+    func playbackStarted(_ id: UUID) {
+        playback = .playing(id)
+        // Finding the file took a moment: another recording may be on show by now.
+        stopPlaybackUnlessSelected()
+    }
+
+    /// The file played to its end, or the wiring stopped it.
+    func playbackEnded(_ id: UUID) {
+        if isPlaying(id) { playback = .idle }
+    }
+
+    func playbackUnavailable(_ id: UUID, message: String) {
+        playback = .unavailable(id, message: message)
+        stopPlaybackUnlessSelected()
+    }
+
+    // MARK: Re-run
+
+    func isRerunning(_ id: UUID) -> Bool {
+        if case .running = reruns[id] { return true }
+        return false
+    }
+
+    /// Whether there is a transcript to send and no re-run of it already going.
+    func canRerun(_ recording: Recording) -> Bool {
+        guard let transcript = recording.transcript else { return false }
+        return !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isRerunning(recording.id)
+    }
+
+    func rerun(_ id: UUID, mode: ModeID) {
+        guard !isRerunning(id) else { return }
+        reruns[id] = nil
+        actions.rerun(id, mode)
+    }
+
+    func cancelRerun(_ id: UUID) { actions.cancelRerun(id) }
+
+    // Wiring → model.
+
+    func rerunStarted(_ id: UUID, mode: ModeID, model: String) {
+        reruns[id] = .running(mode: mode, model: model)
+    }
+
+    /// The recording as saved, with its new version.
+    func rerunFinished(_ updated: Recording) {
+        reruns[updated.id] = nil
+        if let index = recordings.firstIndex(where: { $0.id == updated.id }) { recordings[index] = updated }
+    }
+
+    func rerunFailed(_ id: UUID, mode: ModeID, message: String) {
+        reruns[id] = .failed(mode: mode, message: message)
+    }
+
+    func rerunCancelled(_ id: UUID) {
+        reruns[id] = nil
+    }
+
+    // MARK: Glossary corrections
+
+    /// Whether the two fields of "Add correction…" make a correction: both filled in, and not the same.
+    func canAddCorrection(heard: String, term: String) -> Bool {
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !heard.isEmpty && !term.isEmpty && heard.lowercased() != term.lowercased()
+    }
+
+    /// The glossary's spelling of the entry the correction would go on, or nil when it would make a new one.
+    func existingGlossaryTerm(matching term: String) -> String? { actions.existingGlossaryTerm(term) }
+
+    /// Adds the correction to the glossary and says what happened in the pane of the recording it was made from.
+    func addCorrection(heard: String, term: String, kind: GlossaryEditor.CorrectionKind, from recordingID: UUID) {
+        guard canAddCorrection(heard: heard, term: term) else { return }
+        do {
+            let outcome = try actions.addCorrection(heard, term, kind)
+            correctionNotice = HistoryCorrectionNotice(
+                recordingID: recordingID, text: HistoryText.correction(outcome, heard: heard),
+                tone: outcome == .nothingToAdd ? .warning : .positive)
+        } catch {
+            correctionNotice = HistoryCorrectionNotice(
+                recordingID: recordingID, text: HistoryText.correctionNotSaved(error.localizedDescription),
+                tone: .critical)
+        }
+    }
+
+    func correctionNotice(for id: UUID) -> HistoryCorrectionNotice? {
+        correctionNotice?.recordingID == id ? correctionNotice : nil
+    }
 }

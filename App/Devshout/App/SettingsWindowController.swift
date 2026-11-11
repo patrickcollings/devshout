@@ -16,11 +16,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    func show() {
+    /// Opens the window, or brings it forward. `tab` switches to that tab; `nil` leaves an open window as it is.
+    func show(tab: SettingsTab? = nil) {
         let window = self.window ?? makeWindow()
         self.window = window
-        if window.contentViewController == nil {
-            window.contentViewController = NSHostingController(rootView: SettingsView(models: models))
+        if window.contentViewController == nil || tab != nil {
+            window.contentViewController = NSHostingController(
+                rootView: SettingsView(models: models, initialTab: tab ?? .general))
         }
         // An LSUIElement app's windows open behind the frontmost app unless it activates.
         NSApp.setActivationPolicy(.regular)
@@ -38,6 +40,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
         // The Transcription tab's level meter keeps the microphone open: stop it whatever SwiftUI reports.
         models.microphone.stopLevelMonitoring(for: .settings)
+        // Likewise a recording playing in the History tab: it has no window left to be stopped from.
+        models.history.stopPlayback()
         // Drop the SwiftUI views once the window has gone, so their `onDisappear` runs (it stops the microphone
         // level meter) and the next `show()` starts afresh.
         DispatchQueue.main.async { [weak self] in

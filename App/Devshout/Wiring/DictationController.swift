@@ -39,6 +39,8 @@ final class DictationController {
     /// Something else has the microphone or the engines (voice calibration): a title and detail for the pill, or nil
     /// when a dictation may start.
     var startBlocker: () -> (title: String, detail: String)? = { nil }
+    /// A dictation is about to open the microphone (silence anything devshout itself is playing).
+    var onWillStart: (() -> Void)?
 
     private let services: Services
     private let pill: RecordingPillViewModel
@@ -181,6 +183,7 @@ final class DictationController {
             return
         }
 
+        onWillStart?()
         let settings = services.settings()
         let mode = resolveMode(for: hotkey)
         let front = FrontmostApp.current

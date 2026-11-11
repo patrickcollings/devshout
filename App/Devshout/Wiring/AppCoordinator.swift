@@ -27,6 +27,8 @@ final class AppCoordinator {
     private let defaults = UserDefaults.standard
 
     let history: HistoryStore
+    /// What Settings → History does with a recording (play its audio, re-run it through Claude).
+    let historyActions: HistoryController
     let glossary: GlossaryController
     let engines: EngineController
     let claude: ClaudeController
@@ -103,6 +105,8 @@ final class AppCoordinator {
         )
 
         self.history = history
+        self.historyActions = HistoryController(model: models.history, history: history, claude: claude,
+                                                glossary: glossary.state, settings: { box.value })
         self.glossary = glossary
         self.engines = engines
         self.claude = claude
@@ -167,6 +171,10 @@ final class AppCoordinator {
         if !defaults.bool(forKey: AppDefaultsKey.onboardingCompleted) {
             showOnboarding()
         }
+        // For checking a screen after a build: `open devshout.app --args -openSettingsTab history`.
+        if let name = defaults.string(forKey: AppDefaultsKey.openSettingsTab), let tab = SettingsTab(rawValue: name) {
+            openSettings(tab: tab)
+        }
     }
 
     // MARK: Windows
@@ -187,7 +195,7 @@ final class AppCoordinator {
         }
     }
 
-    func openSettings() {
+    func openSettings(tab: SettingsTab? = nil) {
         // Refresh what Settings shows, then open the window.
         if case .notFound = models.claude.install { claude.detect() }
         if case .installFailed = models.claude.install { claude.detect() }
@@ -199,7 +207,7 @@ final class AppCoordinator {
             models.general.sync { models.general.preferences.launchAtLogin = launch }
         }
         lastGeneral.launchAtLogin = launch
-        settingsWindow.show()
+        settingsWindow.show(tab: tab)
     }
 
     // MARK: Settings
@@ -428,10 +436,16 @@ final class AppCoordinator {
     }
 
     private func wireHistory() {
+        let actions = historyActions
+        actions.isRecording = { [weak self] in self?.dictation.isRecording ?? false }
+        actions.onChange = { [weak self] in self?.refreshStorage() }
+        // Never play over a recording: the microphone would pick the old dictation up.
+        dictation.onWillStart = { [weak actions] in actions?.stopPlayback() }
         models.history.actions = HistoryViewModel.Actions(
             reload: { [weak self] in self?.refreshStorage() },
             delete: { [weak self] id in
                 guard let self else { return }
+                self.historyActions.forget(id)
                 do {
                     try self.history.delete(id)
                 } catch {
@@ -442,7 +456,15 @@ final class AppCoordinator {
             showInFinder: { [weak self] id in
                 guard let self, let folder = self.history.folder(for: id) else { return }
                 NSWorkspace.shared.activateFileViewerSelecting([folder])
-            }
+            },
+            play: { [weak actions] id in actions?.play(id) },
+            stopPlayback: { [weak actions] in actions?.stopPlayback() },
+            rerun: { [weak actions] id, mode in actions?.rerun(id, mode: mode) },
+            cancelRerun: { [weak actions] id in actions?.cancelRerun(id) },
+            addCorrection: { [glossary] heard, term, kind in
+                try glossary.addCorrection(heard: heard, term: term, kind: kind)
+            },
+            existingGlossaryTerm: { [glossary] term in glossary.existingTerm(matching: term) }
         )
     }
 

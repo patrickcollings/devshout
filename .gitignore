@@ -11,3 +11,6 @@ bench/recordings/
 # Written by xcodegen generate from project.yml
 App/Info.plist
 App/Devshout.entitlements
+
+# Agent worktrees
+.claude/worktrees/

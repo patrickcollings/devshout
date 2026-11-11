@@ -6,7 +6,12 @@ import SwiftUI
 
 struct SettingsView: View {
     let models: DevshoutViewModels
-    @State private var tab: SettingsTab = .general
+    @State private var tab: SettingsTab
+
+    init(models: DevshoutViewModels, initialTab: SettingsTab = .general) {
+        self.models = models
+        _tab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,6 +22,10 @@ struct SettingsView: View {
             content
         }
         .frame(width: SettingsLayout.width)
+        // A recording playing in History has its Stop button there: leaving the tab stops it.
+        .onChange(of: tab) { _, shown in
+            if shown != .history { models.history.stopPlayback() }
+        }
     }
 
     @ViewBuilder
