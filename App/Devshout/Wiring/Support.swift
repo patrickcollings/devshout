@@ -25,6 +25,8 @@ struct AppPaths: Sendable {
     var claudeConfig: URL { root.appendingPathComponent("claude", isDirectory: true) }
     /// The empty working directory `claude -p` runs in.
     var claudeWorkingDirectory: URL { root.appendingPathComponent("claude-cwd", isDirectory: true) }
+    /// Voice calibration: one folder per session, with its recordings and result.json.
+    var calibration: URL { root.appendingPathComponent("Calibration", isDirectory: true) }
     var models: ModelLocations { ModelLocations(root: root.appendingPathComponent("Models", isDirectory: true)) }
     /// Scratch space for the level meter (its throwaway recordings are deleted when the meter stops).
     var meterScratch: URL {

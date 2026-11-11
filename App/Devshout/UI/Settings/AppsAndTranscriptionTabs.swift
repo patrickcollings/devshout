@@ -144,6 +144,7 @@ private struct AppsBottomBar: View {
 struct TranscriptionSettingsTab: View {
     @ObservedObject var speech: SpeechEngineViewModel
     @ObservedObject var microphone: MicrophoneViewModel
+    @ObservedObject var calibration: CalibrationViewModel
 
     var body: some View {
         Form {
@@ -189,9 +190,24 @@ struct TranscriptionSettingsTab: View {
                 }
                 LabeledContent("Language", value: "English")
             }
+
+            Section("Your voice") {
+                Text(CalibrationCopy.settingsExplanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    if let last = calibration.lastResult {
+                        Text(CalibrationCopy.lastResult(last))
+                            .font(.callout)
+                    }
+                    Spacer()
+                    Button(CalibrationCopy.openButton) { calibration.open() }
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: SettingsLayout.width, height: 470)
+        .frame(width: SettingsLayout.width, height: 600)
         .onAppear { microphone.startLevelMonitoring(for: .settings) }
         .onDisappear { microphone.stopLevelMonitoring(for: .settings) }
     }
@@ -234,5 +250,11 @@ private struct ModelRow: View {
 }
 
 #Preview("Transcription") {
-    TranscriptionSettingsTab(speech: PreviewData.speech(PreviewData.downloading), microphone: PreviewData.microphone())
+    TranscriptionSettingsTab(speech: PreviewData.speech(PreviewData.downloading), microphone: PreviewData.microphone(),
+                             calibration: CalibrationViewModel())
+}
+
+#Preview("Transcription: calibrated") {
+    TranscriptionSettingsTab(speech: PreviewData.speech(), microphone: PreviewData.microphone(),
+                             calibration: PreviewData.calibration(.intro))
 }

@@ -15,6 +15,8 @@ import Foundation
 final class ClaudeController {
     let connection: ClaudeConnection
     let cleaner: ClaudeCLICleaner
+    /// Writes the voice calibration's glossary sentences: the same token, gate and folders as `cleaner`.
+    let sentenceWriter: ClaudeSentenceWriter
     /// The same clean-up, with whatever token is saved (not gated): Test Connection must work after a refusal.
     private let testCleaner: ClaudeCLICleaner
     private let cache: ClaudeInstallationCache
@@ -50,6 +52,15 @@ final class ClaudeController {
             installation: { try await cache.installation() },
             credential: {
                 // Expired, refused or disconnected: no token, so Tidy and Structure paste the raw text.
+                guard gate.value else { return nil }
+                return try store.load()
+            },
+            configDirectory: paths.claudeConfig,
+            workingDirectory: paths.claudeWorkingDirectory
+        )
+        sentenceWriter = ClaudeSentenceWriter(
+            installation: { try await cache.installation() },
+            credential: {
                 guard gate.value else { return nil }
                 return try store.load()
             },
@@ -97,6 +108,9 @@ final class ClaudeController {
         }
         render()
     }
+
+    /// Whether Claude can be used right now (installed, connected, token not refused or expired).
+    var canCleanNow: Bool { canClean.value }
 
     /// The hint the overlay shows when Tidy or Structure pasted raw because of the connection.
     var rawFallbackHint: String? { connection.state.rawFallbackHint }

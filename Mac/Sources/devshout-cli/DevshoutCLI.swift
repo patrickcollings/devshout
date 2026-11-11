@@ -20,6 +20,7 @@ struct DevshoutCLI: AsyncParsableCommand {
             ConnectCommand.self,
             ClaudeProbeCommand.self,
             BenchCommand.self,
+            CalibrateCommand.self,
             GlossaryCommand.self,
         ]
     )

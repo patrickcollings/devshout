@@ -65,10 +65,15 @@ public struct ClaudeInvocation: Sendable, Hashable {
     public var workingDirectory: URL
     public var host: ClaudeHostEnvironment
     public var timeout: TimeInterval?
+    /// The `-p` prompt. Clean-ups use `PromptBuilder.userPrompt`; other one-off requests (the voice calibration's
+    /// sentence writer) say what they want here. The real instructions are still in the system prompt.
+    public var prompt: String
 
     public init(executable: URL, model: String, systemPrompt: SystemPrompt, stdin: String,
                 credential: ClaudeCredential, configDirectory: URL?, workingDirectory: URL,
-                host: ClaudeHostEnvironment = .current, timeout: TimeInterval? = nil, extraPath: [String] = []) {
+                host: ClaudeHostEnvironment = .current, timeout: TimeInterval? = nil, extraPath: [String] = [],
+                prompt: String = PromptBuilder.userPrompt) {
+        self.prompt = prompt
         self.executable = executable
         self.extraPath = extraPath
         self.model = model
@@ -82,7 +87,7 @@ public struct ClaudeInvocation: Sendable, Hashable {
     }
 
     public var arguments: [String] {
-        var args = ["-p", PromptBuilder.userPrompt]
+        var args = ["-p", prompt]
         let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         if !model.isEmpty { args += ["--model", model] }
         switch systemPrompt {
