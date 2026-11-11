@@ -2,8 +2,10 @@
 // transcription and clean-up all run off the main actor); this class only starts, stops and cancels it and turns
 // its states into the recording pill and the menu bar icon.
 //
-// v0.1: the whole recording is transcribed after stop (Silero VAD + ChunkPlanner over the full audio). While a
-// dictation is still finishing, new triggers are ignored (nothing is queued) and the pill says so.
+// The session transcribes while it records (Silero VAD + ChunkPlanner cut the audio at pauses as it arrives), so
+// after stop only the tail is left. Its progress gives the pill the live transcript while recording and what is
+// left to transcribe after stop. While a dictation is still finishing, new triggers are ignored (nothing is
+// queued) and the pill says so.
 
 import AppKit
 import DevshoutCore
@@ -202,7 +204,7 @@ final class DictationController {
             cleaner: services.claude.cleaner,
             deliverer: GatedDeliverer(inner: services.deliverer, isOpen: gate),
             history: services.history,
-            planChunks: { samples in try await DictationController.planChunks(samples, vad: vad, maxChunkDuration: maxChunk) },
+            planner: vad.chunkPlanner(maxChunkDuration: maxChunk),
             stitch: { Stitcher.stitch($0) },
             fixText: { glossary.fix($0) },
             glossaryForClaude: { glossary.forClaude },
@@ -228,6 +230,13 @@ final class DictationController {
             for await state in session.states {
                 guard self.token == token else { return }
                 self.apply(state)
+            }
+        }
+        // And its transcription progress: the live transcript, then what is left after stop.
+        Task {
+            for await progress in session.progress {
+                guard self.token == token else { return }
+                self.apply(progress)
             }
         }
 
@@ -327,6 +336,21 @@ final class DictationController {
             setReturnKeyEnabled(true)
         case .delivering, .finished, .cancelled, .failed:
             setReturnKeyEnabled(false)
+        }
+    }
+
+    /// Characters of the live transcript that fit the pill's second line (longer text is cut at the front).
+    private static let liveTextCharacters = 48
+
+    private func apply(_ progress: TranscriptionProgress) {
+        // The engine's raw words for the chunks done so far: show the most recent ones.
+        if pill.showsLiveText {
+            let latest = progress.latestText(characters: Self.liveTextCharacters)
+            pill.liveText = latest.isEmpty ? nil : latest
+        }
+        // After stop: how much audio is still to be transcribed, once the last chunk has been cut.
+        if case .transcribing = pill.phase {
+            pill.phase = .transcribing(remaining: progress.planningComplete ? progress.pendingAudio : nil)
         }
     }
 
@@ -463,29 +487,6 @@ final class DictationController {
         }
     }
 
-    // MARK: Chunk planning (off the main actor)
-
-    /// Silero VAD over the whole recording, then ChunkPlanner (v0.1 transcribes after stop). If the VAD isn't
-    /// loaded (its model couldn't be downloaded yet, say) or fails, every frame counts as speech, so the planner
-    /// makes fixed-length chunks with overlaps and nothing is lost.
-    nonisolated static func planChunks(_ samples: [Float], vad: SileroVAD,
-                                       maxChunkDuration: TimeInterval) async throws -> [AudioChunk] {
-        var probabilities: [Float] = []
-        if await vad.isReady {
-            do {
-                await vad.reset()
-                probabilities = try await vad.process(samples)
-                if let last = try await vad.processRemainder() { probabilities.append(last) }
-            } catch {
-                probabilities = []
-            }
-        } else {
-            // Don't make this dictation wait for a download: plan without it, and fetch the model for next time.
-            Task.detached(priority: .utility) { try? await vad.prepare() }
-        }
-        return ChunkPlanner.plan(samples: samples, probabilities: probabilities, frameSize: vad.frameSize,
-                                 maxChunkDuration: maxChunkDuration)
-    }
 }
 
 /// Passes deliveries through until the dictation is cancelled; after that nothing touches the clipboard.

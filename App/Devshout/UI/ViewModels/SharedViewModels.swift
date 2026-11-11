@@ -383,7 +383,7 @@ final class HotkeysViewModel: ObservableObject {
             self.hotkeys = hotkeys
         } else {
             var defaults: [HotkeySlot: HotkeyDisplay] = [:]
-            for slot in HotkeySlot.allCases { defaults[slot] = slot.defaultHotkey }
+            for slot in HotkeySlot.builtIns { defaults[slot] = slot.defaultHotkey }
             self.hotkeys = defaults
         }
         self.recorder = recorder

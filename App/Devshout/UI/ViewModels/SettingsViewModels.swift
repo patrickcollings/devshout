@@ -41,39 +41,157 @@ final class GeneralSettingsViewModel: ObservableObject {
 
 // MARK: - Modes
 
+/// Settings → Modes: the three built-in modes (model, timeout, edited instructions) and the user's own modes
+/// (added blank or from a template, renamed, duplicated, deleted, reordered).
 @MainActor
 final class ModesSettingsViewModel: ObservableObject {
+    struct Actions {
+        /// Persist one built-in mode's config.
+        var saveBuiltIn: @MainActor (ModeConfig) -> Void = { _ in }
+        /// Persist the user's modes: the whole list, in order, after any edit, addition, move or deletion.
+        /// The wiring also drops what pointed at a deleted mode (its hotkey, the default mode, per-app rules).
+        var saveCustomModes: @MainActor ([CustomMode]) -> Void = { _ in }
+    }
+
     static let timeoutRange: ClosedRange<Double> = 5...120
     static let timeoutStep: Double = 5
 
     @Published var configs: [ModeID: ModeConfig]
+    /// The user's modes, in the order they are listed.
+    @Published var customModes: [CustomMode]
     @Published var selectedMode: ModeID = .tidy
     /// The built-in instructions per mode (from Core's prompt builder), shown when there is no custom text.
     var defaultInstructions: [ModeID: String]
-    /// Persist one mode's config.
-    var onChange: @MainActor (ModeConfig) -> Void
+    /// The ready-made modes offered by the Add menu.
+    var templates: [CustomModeTemplate]
+    var actions: Actions
 
-    init(configs: [ModeID: ModeConfig] = ModeConfig.defaults, defaultInstructions: [ModeID: String] = [:],
-         onChange: @escaping @MainActor (ModeConfig) -> Void = { _ in }) {
+    init(configs: [ModeID: ModeConfig] = ModeConfig.defaults, customModes: [CustomMode] = [],
+         defaultInstructions: [ModeID: String] = [:], templates: [CustomModeTemplate] = CustomModeTemplate.all,
+         actions: Actions = Actions()) {
         self.configs = configs
+        self.customModes = customModes
         self.defaultInstructions = defaultInstructions
-        self.onChange = onChange
+        self.templates = templates
+        self.actions = actions
     }
+
+    // MARK: The list
+
+    /// Every mode, as listed: the built-ins, then the user's.
+    var modes: [ModeDescriptor] { ModeDescriptor.builtIns + customModes.map(ModeDescriptor.init) }
+
+    /// The mode the detail pane shows. If the selected mode has gone (deleted here or elsewhere), Tidy.
+    var selected: ModeDescriptor {
+        modes.first { $0.id == selectedMode } ?? .tidy
+    }
+
+    func customMode(_ id: ModeID) -> CustomMode? { customModes.first { $0.id == id } }
+
+    var canDeleteSelected: Bool { customMode(selected.id) != nil }
+    /// Raw has no instructions to copy.
+    var canDuplicateSelected: Bool { selected.usesClaude }
+
+    // MARK: Built-in modes
 
     func config(for mode: ModeID) -> ModeConfig {
-        configs[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "haiku", timeout: 20)
+        if let custom = customMode(mode) { return custom.config }
+        return configs[mode] ?? ModeConfig.defaults[mode] ?? ModeConfig(id: mode, claudeModel: "haiku", timeout: 20)
     }
 
+    /// Changes a built-in mode's config.
     func update(_ mode: ModeID, _ change: (inout ModeConfig) -> Void) {
+        guard mode.isBuiltIn else { return }
         var config = config(for: mode)
         let before = config
         change(&config)
         guard config != before else { return }
         configs[mode] = config
-        onChange(config)
+        actions.saveBuiltIn(config)
     }
 
-    // Bindings for the views.
+    // MARK: The user's modes
+
+    /// Changes one of the user's modes.
+    func updateCustom(_ id: ModeID, _ change: (inout CustomMode) -> Void) {
+        guard let index = customModes.firstIndex(where: { $0.id == id }) else { return }
+        var mode = customModes[index]
+        change(&mode)
+        mode.id = id
+        guard mode != customModes[index] else { return }
+        customModes[index] = mode
+        actions.saveCustomModes(customModes)
+    }
+
+    private func unusedName(_ name: String) -> String {
+        CustomMode.unusedName(name, among: modes.map(\.name))
+    }
+
+    private func append(_ mode: CustomMode) -> ModeID {
+        customModes.append(mode)
+        selectedMode = mode.id
+        actions.saveCustomModes(customModes)
+        return mode.id
+    }
+
+    /// Adds an empty mode, selects it and returns its id.
+    @discardableResult
+    func addBlank() -> ModeID {
+        append(CustomMode(name: unusedName(CustomMode.defaultName)))
+    }
+
+    /// Adds a copy of a template, selects it and returns its id.
+    @discardableResult
+    func add(_ template: CustomModeTemplate) -> ModeID {
+        append(template.makeMode(name: unusedName(template.name)))
+    }
+
+    /// Copies a mode into a new one of the user's: its instructions, model, timeout and look. For Tidy and
+    /// Structure the copy starts from the instructions they use now. Raw has nothing to copy.
+    @discardableResult
+    func duplicate(_ id: ModeID) -> ModeID? {
+        let source = modes.descriptor(for: id)
+        guard source.exists, source.usesClaude else { return nil }
+        let config = config(for: id)
+        let copy = CustomMode(name: unusedName(ModesText.copyName(of: source.name)),
+                              instructions: customMode(id)?.instructions ?? instructions(for: id),
+                              claudeModel: config.claudeModel.isEmpty ? CustomMode.defaultClaudeModel : config.claudeModel,
+                              timeout: clampedTimeout(config.timeout),
+                              symbol: source.symbol, tint: source.tint)
+        guard let index = customModes.firstIndex(where: { $0.id == id }) else { return append(copy) }
+        customModes.insert(copy, at: index + 1)
+        selectedMode = copy.id
+        actions.saveCustomModes(customModes)
+        return copy.id
+    }
+
+    /// Deletes one of the user's modes and selects its neighbour. The view asks for confirmation first.
+    func delete(_ id: ModeID) {
+        guard let index = customModes.firstIndex(where: { $0.id == id }) else { return }
+        customModes.remove(at: index)
+        if selectedMode == id {
+            selectedMode = customModes.indices.contains(index) ? customModes[index].id
+                : customModes.last?.id ?? .tidy
+        }
+        actions.saveCustomModes(customModes)
+    }
+
+    /// Drag to reorder (`ForEach.onMove`).
+    func move(from source: IndexSet, to destination: Int) {
+        let before = customModes
+        // The same result as `Array.move(fromOffsets:toOffset:)`, without needing SwiftUI here.
+        let moving = source.sorted().map { customModes[$0] }
+        let shift = source.filter { $0 < destination }.count
+        for index in source.sorted().reversed() { customModes.remove(at: index) }
+        customModes.insert(contentsOf: moving, at: min(max(destination - shift, 0), customModes.count))
+        if customModes != before { actions.saveCustomModes(customModes) }
+    }
+
+    private func clampedTimeout(_ value: Double) -> Double {
+        min(max(value, Self.timeoutRange.lowerBound), Self.timeoutRange.upperBound)
+    }
+
+    // MARK: Bindings for the views
 
     func modelBinding(for mode: ModeID) -> Binding<String> {
         // Aliases are matched in lower case so "Haiku" still selects the Haiku row.
@@ -81,19 +199,29 @@ final class ModesSettingsViewModel: ObservableObject {
                     let model = self.config(for: mode).claudeModel
                     return ClaudeModelOption(alias: model)?.rawValue ?? model
                 },
-                set: { value in self.update(mode) { $0.claudeModel = value } })
+                set: { value in
+                    if mode.isBuiltIn {
+                        self.update(mode) { $0.claudeModel = value }
+                    } else {
+                        self.updateCustom(mode) { $0.claudeModel = value }
+                    }
+                })
     }
 
     func timeoutBinding(for mode: ModeID) -> Binding<Double> {
         Binding(get: { self.config(for: mode).timeout },
                 set: { value in
-                    let clamped = min(max(value, Self.timeoutRange.lowerBound), Self.timeoutRange.upperBound)
-                    self.update(mode) { $0.timeout = clamped }
+                    let clamped = self.clampedTimeout(value)
+                    if mode.isBuiltIn {
+                        self.update(mode) { $0.timeout = clamped }
+                    } else {
+                        self.updateCustom(mode) { $0.timeout = clamped }
+                    }
                 })
     }
 
-    /// The text in the instructions editor: the custom text, or the default when there is none. Typing text equal
-    /// to the default clears the custom value.
+    /// The text in a built-in mode's instructions editor: the custom text, or the default when there is none.
+    /// Typing text equal to the default clears the custom value.
     func instructionsBinding(for mode: ModeID) -> Binding<String> {
         Binding(get: { self.instructions(for: mode) },
                 set: { value in
@@ -105,13 +233,39 @@ final class ModesSettingsViewModel: ObservableObject {
     }
 
     func instructions(for mode: ModeID) -> String {
-        config(for: mode).customInstructions ?? defaultInstructions[mode] ?? ""
+        if let custom = customMode(mode) { return custom.instructions }
+        return config(for: mode).customInstructions ?? defaultInstructions[mode] ?? ""
     }
 
     func hasCustomInstructions(for mode: ModeID) -> Bool { config(for: mode).customInstructions != nil }
 
     func resetInstructions(for mode: ModeID) {
         update(mode) { $0.customInstructions = nil }
+    }
+
+    /// The name field of one of the user's modes. What is typed is kept as typed (the list and the chips show it
+    /// trimmed, and "Untitled mode" while it is empty), but never longer than a chip can show.
+    func nameBinding(for id: ModeID) -> Binding<String> {
+        Binding(get: { self.customMode(id)?.name ?? "" },
+                set: { value in
+                    let oneLine = value.replacingOccurrences(of: "\n", with: " ")
+                    self.updateCustom(id) { $0.name = String(oneLine.prefix(CustomMode.maximumNameLength)) }
+                })
+    }
+
+    func customInstructionsBinding(for id: ModeID) -> Binding<String> {
+        Binding(get: { self.customMode(id)?.instructions ?? "" },
+                set: { value in self.updateCustom(id) { $0.instructions = value } })
+    }
+
+    func symbolBinding(for id: ModeID) -> Binding<ModeSymbol> {
+        Binding(get: { self.customMode(id)?.symbol ?? CustomMode.defaultSymbol },
+                set: { value in self.updateCustom(id) { $0.symbol = value } })
+    }
+
+    func tintBinding(for id: ModeID) -> Binding<ModeTint> {
+        Binding(get: { self.customMode(id)?.tint ?? CustomMode.defaultTint },
+                set: { value in self.updateCustom(id) { $0.tint = value } })
     }
 }
 
@@ -123,6 +277,8 @@ final class AppsSettingsViewModel: ObservableObject {
         didSet { if !isSyncing, rules != oldValue { onChange(rules) } }
     }
     @Published var selection: Set<AppModeRule.ID> = []
+    /// The modes an app can be given: the built-ins, then the user's own. Wiring keeps it current.
+    @Published var modes: [ModeDescriptor] = ModeDescriptor.builtIns
     /// Apps running now (wiring: `NSWorkspace.shared.runningApplications` with `.regular` activation policy).
     var runningApps: @MainActor () -> [AppCandidate]
     var onChange: @MainActor ([AppModeRule]) -> Void
@@ -378,8 +534,17 @@ final class HistoryViewModel: ObservableObject {
         var existingGlossaryTerm: @MainActor (String) -> String? = { _ in nil }
     }
 
+    /// The modes that exist: the built-ins, then the user's own. Wiring keeps it current.
+    @Published var modes: [ModeDescriptor] = ModeDescriptor.builtIns
+
     /// The modes a recording can be re-run in (the ones that use Claude).
-    static let rerunModes: [ModeID] = [.tidy, .structure]
+    var rerunModes: [ModeDescriptor] { modes.filter(\.usesClaude) }
+
+    /// How to show a recording's mode: as it is now, or, for a custom mode that was deleted, under the name the
+    /// recording kept (else "Deleted mode").
+    func descriptor(for recording: Recording) -> ModeDescriptor {
+        modes.descriptor(for: recording.mode, storedName: recording.modeName)
+    }
 
     /// Newest first.
     @Published var recordings: [Recording] {
@@ -502,7 +667,7 @@ final class HistoryViewModel: ObservableObject {
     // Wiring → model.
 
     func rerunStarted(_ id: UUID, mode: ModeID, model: String) {
-        reruns[id] = .running(mode: mode, model: model)
+        reruns[id] = .running(mode: modes.descriptor(for: mode), model: model)
     }
 
     /// The recording as saved, with its new version.
@@ -512,7 +677,7 @@ final class HistoryViewModel: ObservableObject {
     }
 
     func rerunFailed(_ id: UUID, mode: ModeID, message: String) {
-        reruns[id] = .failed(mode: mode, message: message)
+        reruns[id] = .failed(mode: modes.descriptor(for: mode), message: message)
     }
 
     func rerunCancelled(_ id: UUID) {

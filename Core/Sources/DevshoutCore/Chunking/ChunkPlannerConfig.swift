@@ -9,6 +9,12 @@ public struct ChunkPlannerConfig: Codable, Sendable, Hashable {
     /// A natural cut needs a silence at least this long; the cut goes in the middle of it.
     public var cutSilence: TimeInterval
     /// A frame whose probability is at or above this starts (or continues) speech.
+    ///
+    /// 0.5 to start and 0.35 to end are Silero's own defaults. They were 0.3 and 0.15, which missed almost every
+    /// pause: measured on this Mac, Silero gives speech 1.00 and the pause after it 0.19–0.28, so a pause never
+    /// fell below 0.15 and never ended the speech. Chunks then ran to their limit and were cut by force, in the
+    /// middle of a sentence, with the doubled words that brings ("wants wants"). `devshout-cli vad` prints the
+    /// probabilities for a recording.
     public var speechThreshold: Float
     /// Hysteresis: once in speech, a frame only counts as silence when its probability is below
     /// `speechThreshold - speechExitOffset`. Frames in between keep the previous state.
@@ -28,7 +34,7 @@ public struct ChunkPlannerConfig: Codable, Sendable, Hashable {
 
     public init(minSpeechBeforeCut: TimeInterval = 3.0,
                 cutSilence: TimeInterval = 0.6,
-                speechThreshold: Float = 0.3,
+                speechThreshold: Float = 0.5,
                 speechExitOffset: Float = 0.15,
                 forcedCutSearchWindow: TimeInterval = 2.0,
                 forcedCutOverlap: TimeInterval = 1.0,

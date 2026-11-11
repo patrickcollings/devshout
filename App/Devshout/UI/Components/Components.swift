@@ -31,30 +31,48 @@ extension StatusTone {
     }
 }
 
-extension ModeID {
-    var tint: Color {
-        switch self {
-        case .raw: .gray
-        case .tidy: .blue
-        case .structure: .purple
-        }
-    }
+// MARK: - Modes
 
+extension ModeSymbol {
+    /// The SF Symbol for this choice (all available on macOS 14).
     var symbolName: String {
         switch self {
-        case .raw: "text.alignleft"
-        case .tidy: "sparkles"
-        case .structure: "list.bullet.rectangle"
+        case .text: "text.alignleft"
+        case .sparkles: "sparkles"
+        case .list: "list.bullet.rectangle"
+        case .terminal: "terminal"
+        case .speechBubble: "bubble.left"
+        case .envelope: "envelope"
+        case .branch: "arrow.triangle.branch"
+        case .pencil: "square.and.pencil"
+        case .document: "doc.text"
+        case .lightBulb: "lightbulb"
+        case .checklist: "checklist"
+        case .bolt: "bolt"
         }
     }
+}
 
-    var summary: String {
+extension ModeTint {
+    var color: Color {
         switch self {
-        case .raw: "Exactly what you said, with glossary fixes. Never uses Claude."
-        case .tidy: "Punctuation, paragraphs and fillers fixed. Your words, your order."
-        case .structure: "A clear, ordered brief for a coding agent. Drops nothing."
+        case .grey: .gray
+        case .blue: .blue
+        case .purple: .purple
+        case .green: .green
+        case .orange: .orange
+        case .pink: .pink
+        case .teal: .teal
+        case .red: .red
+        case .indigo: .indigo
+        case .yellow: .yellow
         }
     }
+}
+
+extension ModeDescriptor {
+    var symbolName: String { symbol.symbolName }
+    var color: Color { tint.color }
 }
 
 // MARK: - Hotkeys
@@ -162,22 +180,35 @@ struct SymbolTile: View {
     }
 }
 
-/// A mode name in a tinted capsule.
+/// A mode name in a tinted capsule. A long custom name is cut with "…" rather than pushing its neighbours out:
+/// the compact chip sits in the 300-point recording pill.
 struct ModeChip: View {
-    let mode: ModeID
+    let mode: ModeDescriptor
     var compact: Bool = false
+    /// The widest the name may be before it is truncated. Nil picks a width for the chip's size.
+    var nameWidth: CGFloat? = nil
+
+    private var maxNameWidth: CGFloat { nameWidth ?? (compact ? 110 : 220) }
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: mode.symbolName)
                 .imageScale(.small)
-            Text(mode.displayName)
+            Text(mode.name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                // Hugs the name up to the limit (a flexible frame alone would always take the full width).
+                .frame(maxWidth: maxNameWidth)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .font(compact ? Font.caption.weight(.semibold) : Font.callout.weight(.semibold))
         .padding(.horizontal, compact ? 7 : 9)
         .padding(.vertical, compact ? 3 : 4)
-        .foregroundStyle(mode.tint)
-        .background(Capsule().fill(mode.tint.opacity(0.18)))
+        .foregroundStyle(mode.color)
+        .background(Capsule().fill(mode.color.opacity(0.18)))
+        .help(mode.name)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mode.name)
     }
 }
 

@@ -83,8 +83,8 @@ private struct AppModeCell: View {
 
     var body: some View {
         Picker("Mode", selection: model.modeBinding(for: bundleID)) {
-            ForEach(ModeID.allCases, id: \.self) { mode in
-                Text(mode.displayName).tag(mode)
+            ForEach(model.modes) { mode in
+                Text(mode.name).tag(mode.id)
             }
         }
         .labelsHidden()

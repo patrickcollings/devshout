@@ -1,0 +1,35 @@
+{
+  "applyGlossaryFixes" : true,
+  "audioRetentionDays" : 30,
+  "claudePathOverride" : "/Users/patrick/.local/bin/claude",
+  "defaultMode" : "tidy",
+  "engine" : "parakeet-tdt-0.6b-v3",
+  "hotkeyBehaviour" : "tapToggleHoldToTalk",
+  "modes" : {
+    "raw" : {
+      "claudeModel" : "",
+      "id" : "raw",
+      "timeout" : 0
+    },
+    "structure" : {
+      "claudeModel" : "opus",
+      "customInstructions" : "Write a brief for the agent, in Markdown.",
+      "id" : "structure",
+      "timeout" : 60
+    },
+    "tidy" : {
+      "claudeModel" : "haiku",
+      "id" : "tidy",
+      "timeout" : 20
+    }
+  },
+  "pasteMethod" : "commandV",
+  "perAppModes" : {
+    "com.apple.Terminal" : "structure",
+    "com.apple.mail" : "raw",
+    "com.tinyspeck.slackmacgap" : "tidy"
+  },
+  "showLivePreview" : true,
+  "soundsEnabled" : false,
+  "version" : 1
+}

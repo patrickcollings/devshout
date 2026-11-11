@@ -29,6 +29,8 @@ final class MenuBarViewModel: ObservableObject {
     @Published var defaultMode: ModeID {
         didSet { if !isSyncing, defaultMode != oldValue { actions.setDefaultMode(defaultMode) } }
     }
+    /// Every mode that can be the default: the built-ins, then the user's own. Wiring keeps it current.
+    @Published var modes: [ModeDescriptor] = ModeDescriptor.builtIns
 
     let claude: ClaudeViewModel
     let speech: SpeechEngineViewModel
@@ -336,6 +338,8 @@ final class RecordingPillViewModel: ObservableObject {
 
     @Published var phase: PillPhase = .recording
     @Published var mode: ModeID = .tidy
+    /// The modes that exist, for the chip's name, symbol and colour. Wiring keeps it current.
+    @Published var modes: [ModeDescriptor] = ModeDescriptor.builtIns
     /// When the recording started; the timer counts from here.
     @Published var startedAt: Date = Date()
     /// Frozen duration once recording stops (nil while recording).
@@ -373,7 +377,10 @@ final class RecordingPillViewModel: ObservableObject {
         finalDuration = duration
     }
 
-    var title: String { phase.title(mode: mode) }
+    /// What the chip shows for the mode in use.
+    var modeDescriptor: ModeDescriptor { modes.descriptor(for: mode) }
+
+    var title: String { phase.title(mode: modeDescriptor) }
 
     var secondLine: String? {
         if let notice, !notice.isEmpty { return notice }

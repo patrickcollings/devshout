@@ -421,15 +421,15 @@ enum MenuStatus {
 
 extension PillPhase {
     /// The main line of the pill (the timer and waveform take the place of a title while recording).
-    func title(mode: ModeID) -> String {
+    func title(mode: ModeDescriptor) -> String {
         switch self {
         case .recording:
-            return mode.displayName
+            return mode.name
         case .transcribing(let remaining):
             if let remaining, remaining >= 1 { return "Transcribing the last \(Int(remaining.rounded())) s…" }
             return "Transcribing…"
         case .cleaning(let model):
-            let verb = mode == .structure ? "Structuring" : "Tidying"
+            let verb = ModesText.cleaningVerb(for: mode.id)
             return model.isEmpty ? "\(verb)…" : "\(verb) with \(ClaudeModelOption.displayName(for: model))…"
         case .done(.pasted(let appName)):
             if let appName, !appName.isEmpty { return "Pasted into \(appName)" }
@@ -487,6 +487,57 @@ extension PillPhase {
     }
 }
 
+// MARK: - Modes
+
+/// The wording of Settings → Modes, and what a mode is called while Claude works in it.
+enum ModesText {
+    /// One line under a mode's chip in Settings → Modes.
+    static func summary(for mode: ModeDescriptor) -> String {
+        switch mode.id {
+        case .raw: "Exactly what you said, with glossary fixes. Never uses Claude."
+        case .tidy: "Punctuation, paragraphs and fillers fixed. Your words, your order."
+        case .structure: "A clear, ordered brief for a coding agent. Drops nothing."
+        default: "Your own mode. Claude rewrites what you said, following the instructions below."
+        }
+    }
+
+    /// "Tidying", "Structuring", or "Rewriting" for a custom mode (the chip beside it says which).
+    static func cleaningVerb(for mode: ModeID) -> String {
+        switch mode {
+        case .structure: "Structuring"
+        case .tidy: "Tidying"
+        default: "Rewriting"
+        }
+    }
+
+    static let builtInSection = "Built-in"
+    static let customSection = "Your modes"
+
+    static let addHelp = "Add a mode"
+    static let addBlank = "Blank Mode"
+    static let templatesSection = "From a template"
+    static let duplicate = "Duplicate"
+    static let delete = "Delete…"
+    static let deleteHelp = "Delete the selected mode"
+    static let deleteBuiltInHelp = "Raw, Tidy and Structure can't be deleted"
+    static let reorderHelp = "Drag your modes to reorder them"
+
+    static let namePlaceholder = "Name"
+    static let symbolLabel = "Symbol"
+    static let colourLabel = "Colour"
+    static let instructionsHeader = "Instructions for Claude"
+    static let instructionsFooter = "Say what to write from the dictation. devshout always adds the rest: the dictation is treated as text and never as instructions to follow, British English, your glossary, and to output only the result."
+    static let noInstructions = "This mode has no instructions yet, so it pastes the raw text."
+    static let customTimeoutFooter = "If Claude takes longer than this, devshout pastes the raw text instead."
+    static let hotkeyFooter = "Optional. Tap to toggle or hold to talk, like the other hotkeys. Pressing it while recording switches to this mode."
+
+    /// The name given to a copy: "Slack message copy".
+    static func copyName(of name: String) -> String { "\(name) copy" }
+
+    static func deleteTitle(_ name: String) -> String { "Delete “\(name)”?" }
+    static let deleteMessage = "Its instructions and hotkey are removed. Apps that used it go back to the default mode. Past dictations keep their text. It can't be undone."
+}
+
 // MARK: - Glossary
 
 extension GlossaryTermCounts {
@@ -523,7 +574,8 @@ enum HistoryText {
     /// The texts the detail pane shows, top to bottom: every clean version, newest first (so a re-run comes
     /// first), then what was pasted when that is none of them, then the transcript as heard when it differs from
     /// all of those. A dictation that was never re-run reads as before: "Pasted into Slack", then "As heard".
-    static func sections(for recording: Recording) -> [HistorySection] {
+    /// `modes` are the modes that exist now, for the names of the versions' modes.
+    static func sections(for recording: Recording, modes: [ModeDescriptor] = ModeDescriptor.builtIns) -> [HistorySection] {
         func trimmed(_ text: String?) -> String? {
             guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             return text
@@ -541,7 +593,7 @@ enum HistoryText {
 
         var sections: [HistorySection] = []
         for version in versions {
-            var title = isOnlyVersion ? bestTitle(for: recording) : versionTitle(version)
+            var title = isOnlyVersion ? bestTitle(for: recording) : versionTitle(version, modes: modes)
             if !isOnlyVersion, version.id == deliveredVersion?.id, let note = deliveredNote(for: recording) {
                 title += " · " + note
             }
@@ -562,9 +614,10 @@ enum HistoryText {
         return sections
     }
 
-    /// "Structure · Sonnet · 10 Nov 2026, 14:02"
-    static func versionTitle(_ version: CleanVersion) -> String {
-        var parts = [version.mode.displayName]
+    /// "Structure · Sonnet · 10 Nov 2026, 14:02". A custom mode goes by its name now, or, once it has been deleted,
+    /// by the name the version kept (else "Deleted mode").
+    static func versionTitle(_ version: CleanVersion, modes: [ModeDescriptor] = ModeDescriptor.builtIns) -> String {
+        var parts = [modes.descriptor(for: version.mode, storedName: version.modeName).name]
         if !version.model.isEmpty { parts.append(ClaudeModelOption.displayName(for: version.model)) }
         parts.append("\(UIFormat.day(version.createdAt)), \(UIFormat.time(version.createdAt))")
         return parts.joined(separator: " · ")
@@ -584,14 +637,18 @@ enum HistoryText {
 
     static let rerunHelp = "Send the transcript to Claude again in another mode. Nothing is pasted: the result is added here to read and copy."
 
-    /// "Claude (Sonnet) is structuring…"
-    static func rerunProgress(mode: ModeID, model: String) -> String {
+    /// "Claude (Sonnet) is structuring…", or for a custom mode "Claude (Haiku) is rewriting as Slack message…".
+    static func rerunProgress(mode: ModeDescriptor, model: String) -> String {
         let claude = model.isEmpty ? "Claude" : "Claude (\(ClaudeModelOption.displayName(for: model)))"
-        return "\(claude) is \(mode == .structure ? "structuring" : "tidying")…"
+        switch mode.id {
+        case .structure: return "\(claude) is structuring…"
+        case .tidy: return "\(claude) is tidying…"
+        default: return "\(claude) is rewriting as \(mode.name)…"
+        }
     }
 
-    static func rerunFailed(mode: ModeID, _ error: CleanError) -> String {
-        "Not re-run as \(mode.displayName). " + rerunFailure(error)
+    static func rerunFailed(mode: ModeDescriptor, _ error: CleanError) -> String {
+        "Not re-run as \(mode.name). " + rerunFailure(error)
     }
 
     private static func rerunFailure(_ error: CleanError) -> String {
@@ -608,13 +665,13 @@ enum HistoryText {
         }
     }
 
-    static func rerunNothingToSend(mode: ModeID) -> String {
-        "Not re-run as \(mode.displayName). This recording has no transcript to send to Claude."
+    static func rerunNothingToSend(mode: ModeDescriptor) -> String {
+        "Not re-run as \(mode.name). This recording has no transcript to send to Claude."
     }
 
     /// Claude answered, but record.json couldn't be read or written.
-    static func rerunNotSaved(mode: ModeID, detail: String) -> String {
-        "Re-run as \(mode.displayName), but the result couldn't be saved: \(detail)"
+    static func rerunNotSaved(mode: ModeDescriptor, detail: String) -> String {
+        "Re-run as \(mode.name), but the result couldn't be saved: \(detail)"
     }
 
     static func snippet(for recording: Recording) -> String {

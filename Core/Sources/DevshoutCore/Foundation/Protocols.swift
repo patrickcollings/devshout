@@ -27,6 +27,20 @@ public protocol VoiceActivityDetector: AnyObject, Sendable {
     func reset() async
 }
 
+/// Cuts one recording into chunks for transcription while it is being recorded (PLAN §4.1). One per recording.
+///
+/// `DictationSession` gives it the audio as it arrives and transcribes each chunk it hands back straight away, so
+/// only the chunks `finish()` returns are left to do when the user stops. `VADChunkPlanner` is the real one.
+///
+/// Calls come one at a time, in order (each is awaited before the next). Chunks come back in recording order with
+/// consecutive `index` values from 0, and the cuts must not depend on how the audio was split into calls.
+public protocol LiveChunkPlanner: Sendable {
+    /// The next audio of the recording. Returns the chunks that became final with it (usually none).
+    func append(_ samples: [Float]) async throws -> [AudioChunk]
+    /// The recording has ended. Returns the remaining chunks (the tail). Called at most once, after every `append`.
+    func finish() async throws -> [AudioChunk]
+}
+
 /// Turns raw transcript text into a cleaned version (Claude Code CLI in practice).
 public protocol TextCleaner: Sendable {
     /// Throws `CleanError` only.

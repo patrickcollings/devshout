@@ -294,6 +294,63 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: s.record.path))
     }
 
+    // MARK: Custom modes
+
+    let commit = CustomMode(name: "Commit message", instructions: "Write a Git commit message.",
+                            claudeModel: "sonnet", timeout: 30).config
+
+    @Test func aCustomModeIsSentInItsOwnFrame() async throws {
+        let s = try setup(mode: "ok-echo")
+        let result = try await s.cleaner.clean(transcript, mode: commit, glossary: "- **CORSIA**")
+        // The echo is the transcript as it arrived on stdin: the same wrapper as for the built-ins.
+        #expect(result.text == transcript)
+        #expect(result.model == "sonnet")
+        #expect(result.warnings.isEmpty)
+        let record = try String(contentsOf: s.record, encoding: .utf8)
+        let args = record.components(separatedBy: "--- env\n")[0]
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        #expect(args.starts(with: ["-p", PromptBuilder.userPrompt, "--model", "sonnet", "--system-prompt-file"]))
+        #expect(!args.contains("--bare"))
+    }
+
+    @Test func aCustomModeHasNoLengthCheck() async throws {
+        // The essay that Tidy rejects: a custom mode may write far more, or far less, than was said.
+        let s = try setup(mode: "essay")
+        let result = try await s.cleaner.clean(transcript, mode: commit, glossary: "")
+        #expect(result.text.hasPrefix("Great question!"))
+    }
+
+    @Test func aCustomModeGetsTheCoverageWarning() async throws {
+        let s = try setup(mode: "essay")
+        let result = try await s.cleaner.clean("look at AB-1234 and the CORSIA total of 42",
+                                               mode: commit, glossary: "- **CORSIA** — scheme")
+        #expect(result.warnings == ["may have dropped: AB-1234, 42, CORSIA"])
+    }
+
+    @Test func anEmptyResultFromACustomModeIsRejected() async {
+        let s = try! setup(mode: "empty")
+        await expectCleanError({ if case .rejectedOutput = $0 { true } else { false } }) {
+            _ = try await s.cleaner.clean(transcript, mode: commit, glossary: "")
+        }
+    }
+
+    @Test func aCustomModeWithoutInstructionsSendsNothing() async {
+        let s = try! setup(mode: "ok-echo")
+        var blank = commit
+        blank.customInstructions = nil
+        await expectCleanError({ $0 == .rejectedOutput(reason: ClaudeCLICleaner.noInstructionsReason) }) {
+            _ = try await s.cleaner.clean(transcript, mode: blank, glossary: "")
+        }
+        #expect(!FileManager.default.fileExists(atPath: s.record.path))
+    }
+
+    @Test func whichChecksApply() {
+        #expect(OutputChecks.forMode(.raw) == .none)
+        #expect(OutputChecks.forMode(.tidy) == .length)
+        #expect(OutputChecks.forMode(.structure) == .coverage)
+        #expect(OutputChecks.forMode(.custom()) == .coverage)
+    }
+
     @Test func emptyTranscriptIsRefused() async {
         let s = try! setup(mode: "ok-echo")
         await expectCleanError({ if case .rejectedOutput = $0 { true } else { false } }) {

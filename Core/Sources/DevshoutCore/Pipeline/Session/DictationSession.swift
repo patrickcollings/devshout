@@ -3,21 +3,37 @@ import Foundation
 /// Drives one dictation (PLAN §3, §3.2): record → plan chunks → transcribe → stitch → glossary fixes → clean-up
 /// (Tidy/Structure) → deliver → history. One instance per dictation.
 ///
-/// v0.1 transcribes the whole recording after `stop()`. Audio is written to disk by the recorder before anything else
-/// sees it, and every outcome after recording starts (finished, cancelled or failed) saves `record.json` next to the
-/// audio. Clean-up failures never fail the dictation: the raw text is delivered and the reason recorded.
+/// Transcription runs while the recording goes on (PLAN §1 decision 4): the audio is passed to the chunk planner as
+/// it arrives, and each chunk the planner cuts (at a pause, or at the engine's limit) is transcribed in the
+/// background, one at a time and in order, because the engines run one call at a time. `stop()` gives the planner
+/// the end of the audio, waits for the chunks still outstanding (normally just the tail) and carries on. So the wait
+/// after stop is about one chunk's transcription, however long the dictation was, and the text is the same as
+/// transcribing the whole recording after stop: the same chunks, in the same order, with the same context.
+/// `progress` publishes the text so far, for the pill.
+///
+/// Audio is written to disk by the recorder before anything else sees it, and every outcome after recording starts
+/// (finished, cancelled or failed) saves `record.json` next to the audio. Clean-up failures never fail the
+/// dictation: the raw text is delivered and the reason recorded. `cancel()` abandons the background work at once:
+/// no chunk is given to the engine after it, and one that is already there is not waited for.
 ///
 /// One chunk failing doesn't lose the others: a chunk the engine can't transcribe is tried once more and then left
 /// out, the rest is delivered, and the record's `errorMessage` says which part of the recording is missing. The
 /// dictation only fails when no chunk gave any text.
 ///
 /// Nothing the session waits for can hold it for ever: chunk planning and each chunk's transcription have a time
-/// limit (`DictationOptions`), as clean-up always had. A chunk that runs out of time counts as failed.
+/// limit (`DictationOptions`), as clean-up always had. A chunk that runs out of time counts as failed. Nor can
+/// planning or transcription hold up the recording: the recorder's stream is drained into a queue of its own.
 ///
 /// States are published on `states`, which finishes after the terminal state (`finished`, `cancelled`, `failed`).
 public actor DictationSession {
     public nonisolated let states: AsyncStream<SessionState>
     private let continuation: AsyncStream<SessionState>.Continuation
+    /// How far transcription has got, each time a chunk is cut or finished. Only the latest value is kept for a
+    /// reader that falls behind. Finishes with `states`.
+    public nonisolated let progress: AsyncStream<TranscriptionProgress>
+    private let progressContinuation: AsyncStream<TranscriptionProgress>.Continuation
+    /// The value last published on `progress`.
+    public private(set) var latestProgress = TranscriptionProgress()
 
     public private(set) var state: SessionState = .idle
     /// The mode the dictation will finish in. Can change while recording (`setMode`).
@@ -30,9 +46,36 @@ public actor DictationSession {
     private let options: DictationOptions
 
     private var record: Recording?
-    private var samples: [Float] = []
+    /// Samples received from the recorder.
+    private var sampleCount = 0
     private var collector: Task<Void, Never>?
     private var rawNowSignal: AsyncStream<Void>.Continuation?
+
+    // Background planning and transcription (see `startBackgroundWork`).
+    /// Audio on its way to the planner. Unbounded, so the recorder's stream is drained whatever the planner does.
+    private var audioQueue: AsyncStream<[Float]>.Continuation?
+    /// Chunks on their way to the engine.
+    private var chunkQueue: AsyncStream<AudioChunk>.Continuation?
+    private var planTask: Task<Void, Never>?
+    private var transcribeTask: Task<Void, Never>?
+    /// The engine call in flight, so that `cancel()` can cancel it.
+    private var engineCall: Task<ChunkTranscript, any Error>?
+    /// Set by `cancel()` and by failures that end the dictation: nothing more is planned or transcribed.
+    private var abandoned = false
+    private enum Planning { case running, complete, failed(String) }
+    private var planning: Planning = .running
+    private var chunksPlanned = 0
+    /// Chunks transcribed or given up on.
+    private var chunksDone = 0
+    /// Samples in the chunks planned but not done.
+    private var pendingSamples = 0
+    private var transcripts: [ChunkTranscript] = []
+    private var skipped: [SkippedPart] = []
+    private var engineStuck = false
+    private var vocabularyPrompt: String?
+    private var vocabularyPromptRead = false
+    /// The stitched text of the chunks transcribed while recording (`TranscriptionProgress.text`).
+    private var liveText = ""
 
     private enum Phase { case idle, starting, recording, finishing, done }
     private var phase: Phase = .idle
@@ -50,10 +93,15 @@ public actor DictationSession {
         let (stream, continuation) = AsyncStream<SessionState>.makeStream(bufferingPolicy: .bufferingNewest(512))
         self.states = stream
         self.continuation = continuation
+        let (progress, progressContinuation) = AsyncStream<TranscriptionProgress>
+            .makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.progress = progress
+        self.progressContinuation = progressContinuation
     }
 
     deinit {
         continuation.finish()
+        progressContinuation.finish()
     }
 
     // MARK: Recording
@@ -79,7 +127,7 @@ public actor DictationSession {
         recordingID = folder.id
         audioURL = folder.audioURL
         record = Recording(id: folder.id, createdAt: deps.dateSource.now(), status: .completed, mode: mode,
-                           targetApp: targetApp, engine: deps.engine.id)
+                           modeName: settings.storedName(for: mode), targetApp: targetApp, engine: deps.engine.id)
 
         let stream: AsyncStream<[Float]>
         do {
@@ -95,6 +143,7 @@ public actor DictationSession {
         phase = .recording
         acceptingSamples = true
         publish(.recording(elapsed: 0, level: nil))
+        startBackgroundWork()
         collector = Task { [stream] in
             for await buffer in stream {
                 self.append(buffer)
@@ -116,6 +165,7 @@ public actor DictationSession {
         guard canSwitch else { return false }
         mode = newMode
         record?.mode = newMode
+        record?.modeName = settings.storedName(for: newMode)
         return true
     }
 
@@ -126,20 +176,179 @@ public actor DictationSession {
 
     private func append(_ buffer: [Float]) {
         guard acceptingSamples else { return }
-        samples.append(contentsOf: buffer)
+        sampleCount += buffer.count
+        // Only queued here: the planner and the engine take it from there in their own time.
+        audioQueue?.yield(buffer)
         guard phase == .recording else { return }
-        publish(.recording(elapsed: Double(samples.count) / Double(AudioFormat.sampleRate), level: Self.rms(buffer)))
+        publish(.recording(elapsed: Double(sampleCount) / Double(AudioFormat.sampleRate), level: Self.rms(buffer)))
+    }
+
+    // MARK: Planning and transcribing in the background
+
+    /// Starts the two background tasks of a recording: one passes the audio to the planner and queues the chunks it
+    /// cuts, the other transcribes the queued chunks one at a time. Both end by themselves once `stop()` has ended
+    /// the audio (`drainCollector`) and the last chunk is done, or at `abandonBackgroundWork()`.
+    private func startBackgroundWork() {
+        let (audio, audioQueue) = AsyncStream<[Float]>.makeStream()
+        let (chunks, chunkQueue) = AsyncStream<AudioChunk>.makeStream()
+        self.audioQueue = audioQueue
+        self.chunkQueue = chunkQueue
+        let planner = deps.planner
+        planTask = Task {
+            do {
+                for await buffer in audio {
+                    // After a cancel the planner (and the detector behind it, which the next dictation will use)
+                    // is left alone, whatever audio is still queued.
+                    guard !self.abandoned else { return }
+                    self.planned(try await planner.append(buffer))
+                }
+                guard !self.abandoned, !Task.isCancelled else { return }
+                self.planned(try await planner.finish())
+                self.planningEnded(failure: nil)
+            } catch {
+                self.planningEnded(failure: Self.describe(error))
+            }
+        }
+        transcribeTask = Task {
+            for await chunk in chunks {
+                await self.transcribe(chunk)
+            }
+        }
+    }
+
+    private func planned(_ chunks: [AudioChunk]) {
+        guard !abandoned, !chunks.isEmpty else { return }
+        for chunk in chunks.sorted(by: { $0.index < $1.index }) {
+            chunksPlanned += 1
+            pendingSamples += chunk.samples.count
+            chunkQueue?.yield(chunk)
+        }
+        publishProgress()
+    }
+
+    /// The planner has handed over the last chunk, or failed (`stop()` then fails the dictation).
+    private func planningEnded(failure: String?) {
+        guard !abandoned else { return }
+        planning = failure.map { .failed($0) } ?? .complete
+        audioQueue?.finish()
+        audioQueue = nil
+        chunkQueue?.finish()
+        chunkQueue = nil
+        publishProgress()
+    }
+
+    /// Transcribes one chunk and keeps the result. A chunk the engine can't do is tried once more, then left out.
+    private func transcribe(_ chunk: AudioChunk) async {
+        guard !abandoned else { return }
+        let number = chunksDone + 1
+        if engineStuck {
+            skipped.append(SkippedPart(number: number, startSample: chunk.startSample, endSample: chunk.endSample,
+                                       reason: "not tried, because the engine had stopped answering"))
+            finished(chunk)
+            return
+        }
+        let engine = deps.engine
+        if !vocabularyPromptRead {
+            vocabularyPromptRead = true
+            vocabularyPrompt = engine.acceptsVocabularyPrompt ? deps.vocabularyPrompt() : nil
+        }
+        let context = TranscriptionContext(language: options.language, vocabularyPrompt: vocabularyPrompt,
+                                           previousText: Self.tail(of: transcripts.last?.text,
+                                                                   characters: options.previousTextCharacters))
+        // One more try: a failure is often a one-off (the model being reloaded, a busy Neural Engine).
+        var failure: String?
+        var timeouts = 0
+        let limit = options.chunkTimeout(forAudio: chunk.duration)
+        for _ in 0..<2 {
+            // The call has a task of its own so that cancel() can reach it. This task starts on the session, after
+            // a cancel() that got in first, and then never calls the engine.
+            let call = Task {
+                try Task.checkCancellation()
+                return try await engine.transcribe(chunk, context: context)
+            }
+            engineCall = call
+            let outcome = await Self.bounded(limit) { try await call.value }
+            // Cancelled meanwhile: whatever the engine said is dropped.
+            guard !abandoned else { return }
+            engineCall = nil
+            switch outcome {
+            case .value(let transcript):
+                transcripts.append(transcript)
+                failure = nil
+            case .failed(let reason):
+                failure = reason
+            case .timedOut:
+                // A stuck Core ML call can't be killed, only abandoned.
+                call.cancel()
+                failure = "the engine didn't answer within \(Self.seconds(limit))"
+                timeouts += 1
+            }
+            if failure == nil { break }
+        }
+        // Out of time twice running: the engine is stuck, not slow. Both engines run one call at a time, so every
+        // later chunk would queue behind the stuck call and run out of time as well, twice each. Give up on the
+        // chunks still to come and deliver what there is, rather than sit in "transcribing" for minutes to learn
+        // nothing.
+        if timeouts == 2 { engineStuck = true }
+        if let failure {
+            skipped.append(SkippedPart(number: number, startSample: chunk.startSample, endSample: chunk.endSample,
+                                       reason: failure))
+        } else if phase == .recording {
+            liveText = deps.stitch(transcripts)
+        }
+        finished(chunk)
+    }
+
+    private func finished(_ chunk: AudioChunk) {
+        chunksDone += 1
+        pendingSamples -= chunk.samples.count
+        publishProgress()
+    }
+
+    private func publishProgress() {
+        var complete = false
+        if case .complete = planning { complete = true }
+        latestProgress = TranscriptionProgress(
+            text: liveText, chunksPlanned: chunksPlanned, chunksDone: chunksDone, planningComplete: complete,
+            pendingAudio: Double(max(0, pendingSamples)) / Double(AudioFormat.sampleRate))
+        progressContinuation.yield(latestProgress)
+        // After stop, once the number of chunks is known, the state counts them down.
+        if complete, phase == .finishing, case .transcribing = state {
+            publish(.transcribing(done: chunksDone, total: chunksPlanned))
+        }
+    }
+
+    /// Stops planning and transcribing for good. Nothing is given to the engine after this; a call already with the
+    /// engine is cancelled and not waited for (a Core ML call can't be killed), and its result is dropped.
+    private func abandonBackgroundWork() {
+        abandoned = true
+        audioQueue?.finish()
+        audioQueue = nil
+        chunkQueue?.finish()
+        chunkQueue = nil
+        planTask?.cancel()
+        transcribeTask?.cancel()
+        engineCall?.cancel()
+        engineCall = nil
+    }
+
+    /// For tests: returns when the background tasks have ended.
+    func backgroundWorkEnded() async {
+        await planTask?.value
+        await transcribeTask?.value
     }
 
     // MARK: Cancel
 
-    /// Esc while recording: stops, keeps the audio and saves the record as cancelled. Called while the recorder is
-    /// still starting, it waits for start-up and then cancels. `nil` when not recording.
+    /// Esc while recording: stops, keeps the audio and saves the record as cancelled. Chunks already transcribed in
+    /// the background are dropped, and no more are transcribed. Called while the recorder is still starting, it
+    /// waits for start-up and then cancels. `nil` when not recording.
     @discardableResult
     public func cancel() async -> DictationResult? {
         await waitForStartUp()
         guard phase == .recording, var rec = record else { return nil }
         phase = .finishing
+        abandonBackgroundWork()
         await deps.recorder.cancel()
         await drainCollector()
         rec.status = .cancelled
@@ -160,7 +369,8 @@ public actor DictationSession {
         publish(.transcribing(done: 0, total: 0))
         let stoppedAt = deps.dateSource.now()
 
-        // 1. Stop the recorder and collect the last buffers.
+        // 1. Stop the recorder and collect the last buffers. That ends the audio for the planner, which then hands
+        //    over the tail of the recording as the last chunk.
         var reportedDuration: TimeInterval?
         var recorderError: String?
         do {
@@ -170,74 +380,36 @@ public actor DictationSession {
         }
         await drainCollector()
         rec.duration = audioDuration(reported: reportedDuration)
-        if let recorderError, samples.isEmpty {
+        if let recorderError, sampleCount == 0 {
+            abandonBackgroundWork()
             return fail(rec, stage: .recording, message: "Recording failed: \(recorderError)")
         }
 
-        // 2. Plan chunks.
-        let chunks: [AudioChunk]
-        let planChunks = deps.planChunks
-        let recorded = samples
-        let planLimit = options.planningTimeout(forAudio: Double(recorded.count) / Double(AudioFormat.sampleRate))
-        switch await Self.bounded(planLimit, { try await planChunks(recorded) }) {
-        case .value(let planned):
-            chunks = planned.sorted { $0.index < $1.index }
-        case .failed(let reason):
-            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(reason)")
-        case .timedOut:
+        // 2. Wait for the planner to finish cutting. It has kept up with the recording, so this is the tail only.
+        let planLimit = options.planningTimeout(forAudio: Double(sampleCount) / Double(AudioFormat.sampleRate))
+        let planTask = planTask
+        if case .timedOut = await Self.bounded(planLimit, { await planTask?.value }) {
+            abandonBackgroundWork()
+            keepTextSoFar(in: &rec)
             return fail(rec, stage: .transcribing,
                         message: "Couldn't split the audio: finding the speech in it took longer than "
                             + "\(Self.seconds(planLimit)), so devshout stopped waiting.")
         }
-        guard !chunks.isEmpty else {
+        if case .failed(let reason) = planning {
+            abandonBackgroundWork()
+            keepTextSoFar(in: &rec)
+            return fail(rec, stage: .transcribing, message: "Couldn't split the audio: \(reason)")
+        }
+        let total = chunksPlanned
+        guard total > 0 else {
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
         }
 
-        // 3. Transcribe each chunk in order.
-        let engine = deps.engine
-        let vocabulary = engine.acceptsVocabularyPrompt ? deps.vocabularyPrompt() : nil
-        var transcripts: [ChunkTranscript] = []
-        var skipped: [SkippedPart] = []
-        var engineStuck = false
-        for (position, chunk) in chunks.enumerated() {
-            publish(.transcribing(done: position, total: chunks.count))
-            if engineStuck {
-                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
-                                           endSample: chunk.endSample,
-                                           reason: "not tried, because the engine had stopped answering"))
-                continue
-            }
-            let context = TranscriptionContext(language: options.language, vocabularyPrompt: vocabulary,
-                                               previousText: Self.tail(of: transcripts.last?.text,
-                                                                       characters: options.previousTextCharacters))
-            // One more try: a failure is often a one-off (the model being reloaded, a busy Neural Engine).
-            var failure: String?
-            var timeouts = 0
-            let limit = options.chunkTimeout(forAudio: chunk.duration)
-            for _ in 0..<2 {
-                switch await Self.bounded(limit, { try await engine.transcribe(chunk, context: context) }) {
-                case .value(let transcript):
-                    transcripts.append(transcript)
-                    failure = nil
-                case .failed(let reason):
-                    failure = reason
-                case .timedOut:
-                    failure = "the engine didn't answer within \(Self.seconds(limit))"
-                    timeouts += 1
-                }
-                if failure == nil { break }
-            }
-            // Out of time twice running: the engine is stuck, not slow. Both engines run one call at a time, so
-            // every later chunk would queue behind the stuck call and run out of time as well, twice each. Stop
-            // here and deliver what there is, rather than sit in "transcribing" for minutes to learn nothing.
-            if timeouts == 2 { engineStuck = true }
-            if let failure {
-                skipped.append(SkippedPart(number: position + 1, startSample: chunk.startSample,
-                                           endSample: chunk.endSample, reason: failure))
-            }
-        }
-        publish(.transcribing(done: chunks.count, total: chunks.count))
-        let partial = SkippedPart.summary(skipped, of: chunks.count)
+        // 3. Wait for the chunks that aren't transcribed yet: the tail, and any the engine hadn't reached. Each has
+        //    its own time limit, so this ends.
+        await transcribeTask?.value
+        let transcripts = transcripts.sorted { $0.index < $1.index }
+        let partial = SkippedPart.summary(skipped, of: total)
 
         // 4. Stitch and apply glossary fixes.
         let raw = deps.stitch(transcripts)
@@ -252,7 +424,7 @@ public actor DictationSession {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Nothing to deliver. Say why when the engine failed, rather than blaming the speaker.
             if let first = skipped.first {
-                let what = chunks.count == 1 ? "the recording" : "any of the recording's \(chunks.count) parts"
+                let what = total == 1 ? "the recording" : "any of the recording's \(total) parts"
                 return fail(rec, stage: .transcribing, message: "Couldn't transcribe \(what): \(first.reason)")
             }
             return fail(rec, stage: .transcribing, message: "No speech was detected.")
@@ -261,6 +433,7 @@ public actor DictationSession {
         // 5. Clean-up (Tidy, Structure). Any failure delivers the raw text.
         let finalMode = mode
         rec.mode = finalMode
+        rec.modeName = settings.storedName(for: finalMode)
         var deliveredText = text
         var usedRaw = false
         var reason: String?
@@ -274,7 +447,8 @@ public actor DictationSession {
             switch attempt {
             case .cleaned(let result):
                 deliveredText = result.text
-                rec.versions.append(CleanVersion(result, mode: finalMode, createdAt: deps.dateSource.now()))
+                rec.versions.append(CleanVersion(result, mode: finalMode, modeName: rec.modeName,
+                                                 createdAt: deps.dateSource.now()))
             case .failed(let error):
                 usedRaw = true
                 cleanError = error
@@ -428,11 +602,21 @@ public actor DictationSession {
         }
         acceptingSamples = false
         self.collector = nil
+        // The end of the audio: the planner is asked for the last chunk.
+        audioQueue?.finish()
+        audioQueue = nil
     }
 
     private func audioDuration(reported: TimeInterval?) -> TimeInterval {
         if let reported, reported > 0 { return reported }
-        return Double(samples.count) / Double(AudioFormat.sampleRate)
+        return Double(sampleCount) / Double(AudioFormat.sampleRate)
+    }
+
+    /// When the dictation fails after some chunks were transcribed, history still gets their text.
+    private func keepTextSoFar(in rec: inout Recording) {
+        guard !transcripts.isEmpty else { return }
+        let text = deps.stitch(transcripts.sorted { $0.index < $1.index })
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { rec.rawText = text }
     }
 
     private func fail(_ rec: Recording, stage: SessionStage, message: String) -> DictationResult {
@@ -463,6 +647,7 @@ public actor DictationSession {
         phase = .done
         publish(newState)
         continuation.finish()
+        progressContinuation.finish()
     }
 
     static func rms(_ buffer: [Float]) -> Float? {

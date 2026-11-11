@@ -118,6 +118,97 @@ final class FakeRecorder: AudioRecorder, @unchecked Sendable {
         cancelled.mutate { $0 = true }
         continuation.get()?.finish()
     }
+
+    /// More audio from the microphone while recording.
+    func send(_ buffer: [Float]) {
+        continuation.get()?.yield(buffer)
+    }
+}
+
+/// Closed until `open()`: holds a fake's call until the test lets it go.
+final class Gate: @unchecked Sendable {
+    private let state = Locked<(isOpen: Bool, waiters: [CheckedContinuation<Void, Never>])>((false, []))
+
+    func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let isOpen = state.mutate { state -> Bool in
+                if !state.isOpen { state.waiters.append(continuation) }
+                return state.isOpen
+            }
+            if isOpen { continuation.resume() }
+        }
+    }
+
+    func open() {
+        let waiters = state.mutate { state -> [CheckedContinuation<Void, Never>] in
+            state.isOpen = true
+            defer { state.waiters = [] }
+            return state.waiters
+        }
+        waiters.forEach { $0.resume() }
+    }
+}
+
+/// A planner with a script: `live` chunks are handed over while recording, each once that many samples have
+/// arrived, and `tail` chunks when the recording ends.
+final class FakePlanner: LiveChunkPlanner, @unchecked Sendable {
+    let live: [(afterSamples: Int, chunk: AudioChunk)]
+    let tail: [AudioChunk]
+    /// Thrown by `finish()`.
+    let finishError: FakeError?
+    /// Thrown by `append` once this many samples have arrived (the detector failing mid-recording).
+    let failsAfterSamples: Int?
+    /// Never answers, like a stuck VAD call.
+    let hangs: Bool
+
+    let receivedSamples = Locked(0)
+    /// The samples received by the time `finish()` was called (one entry per call).
+    let finishedWithSamples = Locked<[Int]>([])
+    private let handedOver = Locked(0)
+
+    init(live: [(afterSamples: Int, chunk: AudioChunk)] = [], tail: [AudioChunk] = [], finishError: FakeError? = nil,
+         failsAfterSamples: Int? = nil, hangs: Bool = false) {
+        self.live = live
+        self.tail = tail
+        self.finishError = finishError
+        self.failsAfterSamples = failsAfterSamples
+        self.hangs = hangs
+    }
+
+    /// Chunk `index` of a recording cut every 14.5 s, as Parakeet's are.
+    static func chunk(_ index: Int) -> AudioChunk {
+        AudioChunk(index: index, startSample: index * 232_000, endSample: (index + 1) * 232_000,
+                   samples: [Float](repeating: 0, count: 100))
+    }
+
+    func append(_ samples: [Float]) async throws -> [AudioChunk] {
+        if hangs { await Hang.forever() }
+        let received = receivedSamples.mutate { total -> Int in
+            total += samples.count
+            return total
+        }
+        if let failsAfterSamples, received >= failsAfterSamples { throw FakeError(message: "VAD failed") }
+        return handedOver.mutate { next -> [AudioChunk] in
+            var chunks: [AudioChunk] = []
+            while next < live.count, live[next].afterSamples <= received {
+                chunks.append(live[next].chunk)
+                next += 1
+            }
+            return chunks
+        }
+    }
+
+    func finish() async throws -> [AudioChunk] {
+        finishedWithSamples.mutate { $0.append(receivedSamples.get()) }
+        if hangs { await Hang.forever() }
+        if let finishError { throw finishError }
+        // Live chunks the recording ended before reaching are part of the tail.
+        let rest = handedOver.mutate { next -> [AudioChunk] in
+            defer { next = live.count }
+            return live[next...].map(\.chunk)
+        }
+        return rest + tail
+    }
 }
 
 final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
@@ -135,6 +226,8 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
         case hang
         /// Answers with no text (silence, or a cough).
         case empty
+        /// Answers once the gate is opened (a call the test wants to catch in flight).
+        case hold(Gate)
     }
 
     init(id: EngineID = .parakeetV3, acceptsVocabularyPrompt: Bool = false, failAtIndex: Int? = nil,
@@ -163,6 +256,8 @@ final class FakeEngine: TranscriptionEngine, @unchecked Sendable {
                 await Hang.forever()
             case .empty:
                 text = ""
+            case .hold(let gate):
+                await gate.wait()
             }
         }
         return ChunkTranscript(index: chunk.index, startSample: chunk.startSample, endSample: chunk.endSample,
@@ -210,32 +305,53 @@ final class FakeDeliverer: Deliverer, @unchecked Sendable {
 struct SessionHarness {
     let temp: TempDir
     let recorder: FakeRecorder
-    let engine: FakeEngine
+    let anyEngine: any TranscriptionEngine
+    /// The scripted engine (the default).
+    var engine: FakeEngine { anyEngine as! FakeEngine }
     let cleaner: FakeCleaner
     let deliverer: FakeDeliverer
     let history: HistoryStore
     let session: DictationSession
-    let plannedSampleCounts = Locked<[Int]>([])
+    let planner: any LiveChunkPlanner
     let stitchedIndices = Locked<[[Int]]>([])
 
+    /// The scripted planner (nil when the harness was given another one).
+    var fakePlanner: FakePlanner? { planner as? FakePlanner }
+    /// The samples the planner had been given when the recording ended.
+    var plannedSampleCounts: [Int] { fakePlanner?.finishedWithSamples.get() ?? [] }
+
+    /// - Parameters:
+    ///   - chunkOrder: the chunks the planner hands over, as indices.
+    ///   - liveAfter: sample counts at which the first of those chunks are handed over while recording, one each.
+    ///     The rest (all of them, by default) come when the recording ends, so nothing is transcribed before stop.
+    ///   - planner: used instead of the scripted planner (`chunkOrder`, `liveAfter` and the `plan…` arguments).
     init(recorder: FakeRecorder = FakeRecorder(),
-         engine: FakeEngine = FakeEngine(),
+         engine: any TranscriptionEngine = FakeEngine(),
          cleaner: FakeCleaner = FakeCleaner(),
          deliverer: FakeDeliverer = FakeDeliverer(),
          settings: AppSettings = AppSettings(),
          options: DictationOptions = DictationOptions(),
          chunkOrder: [Int] = [0, 1, 2],
+         liveAfter: [Int] = [],
          planError: FakeError? = nil,
-         planHangs: Bool = false) throws {
+         planFailsAfterSamples: Int? = nil,
+         planHangs: Bool = false,
+         planner: (any LiveChunkPlanner)? = nil,
+         stitch: (@Sendable ([ChunkTranscript]) -> String)? = nil) throws {
         temp = try TempDir()
         self.recorder = recorder
-        self.engine = engine
+        self.anyEngine = engine
         self.cleaner = cleaner
         self.deliverer = deliverer
         let dates = FixedDateSource(Date(timeIntervalSince1970: 1_793_000_000))
         history = HistoryStore(root: temp.url.appendingPathComponent("Recordings"), dateSource: dates,
                                timeZone: TimeZone(identifier: "UTC")!)
-        let planned = plannedSampleCounts
+        let chunks = chunkOrder.map(FakePlanner.chunk)
+        let live = zip(liveAfter, chunks).map { (afterSamples: $0, chunk: $1) }
+        let planner = planner ?? FakePlanner(live: live, tail: Array(chunks.dropFirst(live.count)),
+                                             finishError: planError, failsAfterSamples: planFailsAfterSamples,
+                                             hangs: planHangs)
+        self.planner = planner
         let stitched = stitchedIndices
         let deps = DictationDependencies(
             recorder: recorder,
@@ -243,15 +359,8 @@ struct SessionHarness {
             cleaner: cleaner,
             deliverer: deliverer,
             history: history,
-            planChunks: { samples in
-                planned.mutate { $0.append(samples.count) }
-                if planHangs { await Hang.forever() }  // a stuck VAD call
-                if let planError { throw planError }
-                // Each chunk is 14.5 s of the recording, as Parakeet's are.
-                return chunkOrder.map { AudioChunk(index: $0, startSample: $0 * 232_000, endSample: ($0 + 1) * 232_000,
-                                                   samples: [Float](repeating: 0, count: 100)) }
-            },
-            stitch: { transcripts in
+            planner: planner,
+            stitch: stitch ?? { transcripts in
                 stitched.mutate { $0.append(transcripts.map(\.index)) }
                 return transcripts.map(\.text).joined(separator: " ")
             },
@@ -266,6 +375,23 @@ struct SessionHarness {
     func waitForAudio(_ seconds: TimeInterval) async {
         for _ in 0..<1_000 {
             if case .recording(let elapsed, _) = await session.state, elapsed >= seconds { return }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    /// Waits until `count` chunks have been transcribed (or given up on) in the background. It gives up after a
+    /// while so that a broken session fails the test's expectations rather than hanging the run.
+    func waitForChunks(done count: Int) async {
+        for _ in 0..<20_000 {
+            if await session.latestProgress.chunksDone >= count { return }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    /// Waits until the engine has been given `count` calls.
+    func waitForEngineCalls(_ count: Int) async {
+        for _ in 0..<20_000 {
+            if engine.calls.get().count >= count { return }
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
     }

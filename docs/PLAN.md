@@ -285,7 +285,7 @@ Retention settings: audio is kept 30 days by default, text forever, and both can
 
 The input is the stream of Silero speech probabilities from FluidAudio's VAD (FluidAudio's VAD works on 4,096-sample / 256 ms frames; the spike confirms the frame size and whether finer frames are worth it) plus the running sample count. The output is cut points. The rules:
 
-- **Natural cut:** once a chunk has ≥ 3 s of speech, cut in the middle of the first silence ≥ 0.6 s (probability < 0.3, with hysteresis like FluidAudio's `VadSegmentationConfig`).
+- **Natural cut:** once a chunk has ≥ 3 s of speech, cut in the middle of the first silence ≥ 0.6 s (speech starts at probability ≥ 0.5 and ends below 0.35, Silero's own defaults; 0.3 and 0.15 were tried first and missed nearly every pause).
 - **Forced cut:** a chunk may never exceed `engine.maxChunkDuration` (Parakeet ≈ 14.5 s, because its encoder window is 15 s; Whisper ≈ 28 s). If no silence comes, cut at the lowest-probability frame in the last 2 s before the limit, and **overlap the next chunk by 1.0 s**.
 - **Skip silence:** a chunk with < 0.3 s of speech is not transcribed. This stops Whisper hallucinating ("Thank you for watching") over silence.
 - **Padding:** each chunk keeps 0.15 s of audio either side of the speech, so first and last phonemes aren't clipped.
@@ -356,6 +356,8 @@ Shared preamble (every mode):
 > The transcript is someone talking through instructions for an AI coding agent. Rewrite it as a clear, well-ordered written brief that the agent can act on. **Every point, requirement, constraint, example, name, number, file path and ticket ID in the transcript must appear in your output: drop none, invent none.** When the speaker corrects themselves, keep only the corrected version. Group related points, and order them as: the goal and context first, then numbered steps or requirements, then constraints, then open questions the speaker raised. Write as direct instructions to the agent, in Markdown (short headings and numbered lists), with no preamble.
 
 **Raw:** Claude is not called.
+
+**Custom modes (added after v0.2).** Besides Raw, Tidy and Structure, the user can make modes of their own in Settings → Modes (name, instructions, model, timeout, hotkey, symbol and colour), blank or from a template (prompt for a coding agent, Slack message, commit message, email). `ModeID` is a string wrapper with the three built-ins as constants and `custom-<uuid>` for the rest; the definitions are in `settings.json` under `customModes`. A custom mode's instructions never form the whole prompt: `PromptBuilder` puts them in a `<mode_instructions>` block inside the same frame as the built-ins (the transcript is data, British English, the glossary, output only the text) and restates the rules after them. Checks: no length check (a commit message is rightly much shorter than its dictation), the coverage warning as for Structure, and an empty result still pastes the raw text.
 
 ### 5.3 Connecting a Claude account: what the docs say (checked 2026-11-10)
 

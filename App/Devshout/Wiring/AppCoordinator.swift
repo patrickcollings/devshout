@@ -48,6 +48,8 @@ final class AppCoordinator {
     private var started = false
     /// The General preferences as last applied (to tell which one the user just changed).
     private var lastGeneral = GeneralPreferences()
+    /// The dictation hotkeys as they were when no two of them were the same (see `hotkeyRecorded`).
+    private var shortcuts: [HotkeySlot: KeyboardShortcuts.Shortcut] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     private init() {
@@ -262,6 +264,7 @@ final class AppCoordinator {
         wirePrivacy()
         wireHistory()
         wireHotkeys()
+        publishModes()
 
         // Menu bar.
         models.menuBar.sync { models.menuBar.defaultMode = settings.defaultMode }
@@ -365,12 +368,52 @@ final class AppCoordinator {
     private func wireModes() {
         let modes = models.modes
         modes.configs = settings.modes
+        modes.customModes = settings.customModes
         var instructions: [ModeID: String] = [:]
-        for mode in ModeID.allCases {
+        for mode in ModeID.builtIns {
             if let text = PromptBuilder.defaultInstructions(for: mode) { instructions[mode] = text }
         }
         modes.defaultInstructions = instructions
-        modes.onChange = { [weak self] config in self?.updateSettings { $0.modes[config.id] = config } }
+        modes.actions = ModesSettingsViewModel.Actions(
+            saveBuiltIn: { [weak self] config in self?.updateSettings { $0.modes[config.id] = config } },
+            saveCustomModes: { [weak self] list in
+                guard let self else { return }
+                self.updateSettings {
+                    $0.customModes = list
+                    // A deleted mode can't stay the default mode or an app's mode.
+                    $0.dropReferencesToMissingModes()
+                }
+                self.publishModes()
+            }
+        )
+    }
+
+    /// Tells everything that lists or shows modes what the modes are now: the menu's default-mode picker, the
+    /// Apps tab, History, the recording pill and the hotkey centre. Called at launch and whenever the user's modes
+    /// change (a rename shows at once; a deleted mode's hotkey is unregistered and forgotten).
+    private func publishModes() {
+        let descriptors = settings.modeDescriptors
+        if models.menuBar.modes != descriptors { models.menuBar.modes = descriptors }
+        if models.apps.modes != descriptors { models.apps.modes = descriptors }
+        if models.history.modes != descriptors { models.history.modes = descriptors }
+        if models.pill.modes != descriptors { models.pill.modes = descriptors }
+        if models.modes.customModes != settings.customModes { models.modes.customModes = settings.customModes }
+
+        // Deleting a mode may have changed the default mode and removed per-app rules.
+        if models.menuBar.defaultMode != settings.defaultMode {
+            models.menuBar.sync { models.menuBar.defaultMode = settings.defaultMode }
+        }
+        let table = settings.perAppModes
+        let rules = models.apps.rules.filter { table[$0.bundleID] != nil }
+        if rules != models.apps.rules {
+            models.apps.sync {
+                models.apps.rules = rules
+                models.apps.selection = models.apps.selection.filter { table[$0] != nil }
+            }
+        }
+
+        dictation.hotkeys.setCustomModes(settings.customModes.map(\.id))
+        refreshHotkeyDisplay()
     }
 
     private func wireApps() {
@@ -497,8 +540,9 @@ final class AppCoordinator {
     private func wireHotkeys() {
         models.hotkeys.recorder = { [weak self] slot in
             AnyView(
-                KeyboardShortcuts.Recorder(for: slot.dictationHotkey.name, onChange: { _ in
-                    self?.refreshHotkeyDisplay()
+                KeyboardShortcuts.Recorder(for: slot.dictationHotkey.name, onChange: { shortcut in
+                    // After the recorder has finished storing it.
+                    DispatchQueue.main.async { self?.hotkeyRecorded(shortcut, for: slot) }
                 })
                 .fixedSize()
             )
@@ -510,13 +554,34 @@ final class AppCoordinator {
             .store(in: &cancellables)
     }
 
+    /// Every dictation hotkey there is: the fixed four and one per custom mode.
+    private var hotkeySlots: [HotkeySlot] {
+        HotkeySlot.builtIns + settings.customModes.map { .custom($0.id) }
+    }
+
+    /// A recorder stored a shortcut (or cleared it). Two dictation hotkeys with the same keys would both fire on
+    /// one press (start in one mode and switch to the other at once), which the recorder doesn't check for now
+    /// that there can be any number of them: the slot that just took another's keys gets back what it had.
+    private func hotkeyRecorded(_ shortcut: KeyboardShortcuts.Shortcut?, for slot: HotkeySlot) {
+        if let shortcut,
+           hotkeySlots.contains(where: { $0 != slot && KeyboardShortcuts.getShortcut(for: $0.dictationHotkey.name) == shortcut }) {
+            KeyboardShortcuts.setShortcut(shortcuts[slot], for: slot.dictationHotkey.name)
+            NSSound.beep()
+        }
+        refreshHotkeyDisplay()
+    }
+
     func refreshHotkeyDisplay() {
         var displays: [HotkeySlot: HotkeyDisplay] = [:]
-        for slot in HotkeySlot.allCases {
+        var current: [HotkeySlot: KeyboardShortcuts.Shortcut] = [:]
+        for slot in hotkeySlots {
             if let shortcut = KeyboardShortcuts.getShortcut(for: slot.dictationHotkey.name) {
                 displays[slot] = HotkeyDisplay(shortcut)
+                current[slot] = shortcut
             }
         }
+        // Kept only while no two are the same, so that a clash can be put back to how things were.
+        if Set(current.values).count == current.count { shortcuts = current }
         if models.hotkeys.hotkeys != displays { models.hotkeys.hotkeys = displays }
     }
 }
@@ -531,6 +596,7 @@ extension HotkeySlot {
         case .tidy: .dictateTidy
         case .structure: .dictateStructure
         case .raw: .dictateRaw
+        case .custom(let mode): .custom(mode)
         }
     }
 }

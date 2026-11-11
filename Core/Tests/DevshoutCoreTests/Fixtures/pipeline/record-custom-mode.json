@@ -1,0 +1,26 @@
+{
+  "id": "9C4D5E6F-1A2B-4C3D-8E4F-0123456789CD",
+  "createdAt": "2026-11-11T09:15:00.000Z",
+  "duration": 21,
+  "status": "completed",
+  "mode": "custom-11111111-aaaa-4bbb-8ccc-000000000001",
+  "modeName": "Slack message",
+  "engine": "parakeet-tdt-0.6b-v3",
+  "rawText": "tell sam the import is fixed and AB-1234 can be closed",
+  "fixesApplied": false,
+  "versions": [
+    { "id": "1B2C3D4E-5F60-4718-9A2B-C3D4E5F60718", "mode": "custom-11111111-aaaa-4bbb-8ccc-000000000001",
+      "modeName": "Slack message", "model": "haiku",
+      "text": "Sam, the import is fixed, so AB-1234 can be closed.", "elapsed": 1.2,
+      "warnings": [], "createdAt": "2026-11-11T09:15:23.000Z" },
+    { "id": "2C3D4E5F-6071-4829-8B3C-D4E5F6071829", "mode": "custom-33333333-aaaa-4bbb-8ccc-000000000003",
+      "model": "sonnet", "text": "Close AB-1234: import fixed", "elapsed": 2,
+      "createdAt": "2026-11-11T09:20:00.000Z" },
+    { "id": "3D4E5F60-7182-493A-9C4D-E5F60718293A", "mode": "a mode name that was never valid",
+      "model": "haiku", "text": "Tell Sam the import is fixed.", "elapsed": 1,
+      "createdAt": "2026-11-11T09:21:00.000Z" }
+  ],
+  "deliveredText": "Sam, the import is fixed, so AB-1234 can be closed.",
+  "delivered": { "method": "pasted", "appName": "Slack" },
+  "timings": { "transcription": 0.5, "cleaning": 1.2, "delivery": 0.1, "total": 1.8 }
+}

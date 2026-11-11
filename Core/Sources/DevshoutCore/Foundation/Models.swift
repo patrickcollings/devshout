@@ -8,18 +8,61 @@ public enum AudioFormat {
     public static let sampleRate: Int = 16_000
 }
 
-/// The three dictation modes. Raw never calls Claude.
-public enum ModeID: String, Codable, Sendable, CaseIterable, Hashable {
-    case raw, tidy, structure
+/// A dictation mode's identity: one of the three built-ins (`.raw`, `.tidy`, `.structure`) or a mode the user made
+/// in Settings → Modes (`custom-<uuid>`). Raw never calls Claude.
+///
+/// It is a string wrapper rather than an enum so user-defined modes fit in the same type: everything that stores,
+/// routes or compares a mode keeps working unchanged, and `.tidy` and friends read as before. What a custom mode
+/// *is* (name, instructions, model, appearance) lives in `AppSettings.customModes`; look it up with
+/// `AppSettings.descriptor(for:)` and `AppSettings.config(for:)`.
+///
+/// On disk it is the bare string, as it always was (`"tidy"`). A string that is neither a built-in name nor a
+/// well-formed custom id doesn't decode, so the tolerant decoders fall back to their defaults for it.
+public struct ModeID: RawRepresentable, Codable, Sendable, Hashable {
+    public let rawValue: String
 
-    public var displayName: String {
-        switch self {
-        case .raw: "Raw"
-        case .tidy: "Tidy"
-        case .structure: "Structure"
+    public static let raw = ModeID(unchecked: "raw")
+    public static let tidy = ModeID(unchecked: "tidy")
+    public static let structure = ModeID(unchecked: "structure")
+
+    /// The built-in modes, in the order they are listed. They can't be deleted.
+    public static let builtIns: [ModeID] = [.raw, .tidy, .structure]
+
+    /// Every custom mode's id starts with this.
+    public static let customPrefix = "custom-"
+
+    /// Nil unless `rawValue` is a built-in name or `custom-` followed by letters, digits and hyphens (so the id is
+    /// safe to use in a file, a UserDefaults key and a hotkey name).
+    public init?(rawValue: String) {
+        if Self.builtInNames[rawValue] == nil {
+            guard rawValue.hasPrefix(Self.customPrefix) else { return nil }
+            let rest = rawValue.dropFirst(Self.customPrefix.count)
+            guard !rest.isEmpty, rest.count <= 64,
+                  rest.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { return nil }
         }
+        self.rawValue = rawValue
     }
 
+    private init(unchecked rawValue: String) { self.rawValue = rawValue }
+
+    /// A new id for a user-defined mode.
+    public static func custom(_ uuid: UUID = UUID()) -> ModeID {
+        ModeID(unchecked: customPrefix + uuid.uuidString.lowercased())
+    }
+
+    private static let builtInNames = ["raw": "Raw", "tidy": "Tidy", "structure": "Structure"]
+
+    public var isBuiltIn: Bool { Self.builtInNames[rawValue] != nil }
+    public var isCustom: Bool { !isBuiltIn }
+
+    /// "Raw", "Tidy" or "Structure"; nil for a custom mode, whose name is in the settings.
+    public var builtInName: String? { Self.builtInNames[rawValue] }
+
+    /// The built-in name, or "Custom mode" where the settings aren't to hand (logs, the CLI). The UI shows a custom
+    /// mode's own name through `AppSettings.descriptor(for:)`.
+    public var displayName: String { builtInName ?? "Custom mode" }
+
+    /// Every mode but Raw is cleaned up by Claude.
     public var usesClaude: Bool { self != .raw }
 }
 
@@ -30,7 +73,8 @@ public struct ModeConfig: Codable, Sendable, Hashable {
     public var claudeModel: String
     /// Seconds to wait for Claude before pasting the raw text instead.
     public var timeout: TimeInterval
-    /// Replaces the built-in instructions for this mode when set (Settings → Modes → Advanced).
+    /// For a built-in mode: replaces the built-in instructions when set (Settings → Modes → Advanced).
+    /// For a custom mode: the mode's instructions (see `PromptBuilder.systemPrompt`).
     public var customInstructions: String?
 
     public init(id: ModeID, claudeModel: String, timeout: TimeInterval, customInstructions: String? = nil) {

@@ -24,6 +24,11 @@ The v0.1 SwiftUI screens (PLAN §7.1–§7.4 as amended by §0). Views are dumb:
    so closing the window never leaves the microphone running.
 6. Hotkey recorders: `models.hotkeys.recorder = { slot in AnyView(KeyboardShortcuts.Recorder(for: …)) }`, and keep
    `models.hotkeys.hotkeys` current for display.
+7. Modes: views never ask a `ModeID` for its name or look. They show a `ModeDescriptor` (Core), which covers the
+   built-ins, the user's own modes and a mode that has been deleted. Each model that lists or shows modes
+   (`menuBar`, `apps`, `history`, `pill`) has a `modes: [ModeDescriptor]` that wiring sets from
+   `settings.modeDescriptors` whenever the user's modes change (`AppCoordinator.publishModes`); `models.modes`
+   edits them and calls `Actions.saveCustomModes` with the whole list.
 
 ## Files
 

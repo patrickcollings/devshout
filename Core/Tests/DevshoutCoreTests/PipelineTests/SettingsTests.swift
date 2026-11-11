@@ -100,7 +100,7 @@ func pipelineFixture(_ name: String) throws -> Data {
         #expect(s.modes[.structure] == ModeConfig(id: .structure, claudeModel: "opus", timeout: 45,
                                                   customInstructions: "Use headings."))
         #expect(s.modes[.raw] == ModeConfig.defaults[.raw])
-        #expect(s.modes.count == ModeID.allCases.count)  // unknown "commitMessage" dropped
+        #expect(s.modes.count == ModeID.builtIns.count)  // unknown "commitMessage" dropped
         #expect(s.perAppModes == ["com.apple.Terminal": .structure, "com.tinyspeck.slackmacgap": .tidy])
         #expect(s.hotkeyBehaviour == .holdOnly)
         #expect(s.pasteMethod == .commandV)  // wrong type → default
@@ -108,6 +108,7 @@ func pipelineFixture(_ name: String) throws -> Data {
         #expect(s.showLivePreview)  // missing → default
         #expect(s.audioRetentionDays == nil)  // explicit null = for ever
         #expect(s.applyGlossaryFixes)  // wrong type → default
+        #expect(s.customModes.isEmpty)  // the file is from before custom modes
     }
 
     @Test func missingModesAreFilledIn() throws {

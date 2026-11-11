@@ -169,10 +169,11 @@ enum ClaudeSetup {
 actor EngineHost {
     let locations = ModelLocations.default
     private var engines: [EngineID: any TranscriptionEngine] = [:]
-    private let vad = SileroVAD()
+    /// The voice activity detector (`dictate-file` makes the app's chunk planner from it).
+    nonisolated let vad = SileroVAD()
     private var vadReady = false
 
-    private func engine(_ id: EngineID) -> any TranscriptionEngine {
+    func engine(_ id: EngineID) -> any TranscriptionEngine {
         if let existing = engines[id] { return existing }
         let made = EngineFactory.makeEngine(id, locations: locations)
         engines[id] = made
