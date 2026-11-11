@@ -453,25 +453,26 @@ final class CalibrationController {
     /// glossary.md, and reloads the glossary for the pipeline and the editor.
     private func applyLearning(_ corrections: [LearnedCorrection], _ notes: [LearnedStyleNote]) {
         let noteTexts = notes.map(\.text)
-        func edited(_ text: String) -> String {
-            var text = text
-            for correction in corrections {
-                text = GlossaryEditor.addingCorrection(heard: correction.heard, term: correction.term, to: text)
-            }
-            return GlossaryEditor.addingStyleNotes(noteTexts, to: text)
-        }
+        let people = Set(glossary.people.map { $0.term.lowercased() })
         do {
-            let file = services.glossary.file
-            let updated = edited(try file.loadText())
-            try file.save(text: updated)
-            services.glossary.state.update(GlossaryParser.parse(updated))
-
-            // The editor in Settings → Glossary: show the new file, and keep any unsaved typing (with the same
-            // additions, so saving it later doesn't lose them).
-            let editor = services.glossaryEditor
-            let unsaved = editor.isDirty ? edited(editor.text) : nil
-            editor.load(updated)
-            if let unsaved { editor.text = unsaved }
+            // Mishearings go through the same path as History's "Add correction…" (the file, the pipeline and the
+            // editor are all brought up to date by it).
+            for correction in corrections {
+                let kind: GlossaryEditor.CorrectionKind = people.contains(correction.term.lowercased()) ? .person : .term
+                try services.glossary.addCorrection(heard: correction.heard, term: correction.term, kind: kind)
+            }
+            if !noteTexts.isEmpty {
+                let file = services.glossary.file
+                let onDisk = try file.loadText()
+                let updated = GlossaryEditor.addingStyleNotes(noteTexts, to: onDisk)
+                if updated != onDisk {
+                    try file.save(text: updated)
+                    services.glossary.state.update(GlossaryParser.parse(updated))
+                    services.glossaryEditor.savedElsewhere(updated) { draft in
+                        GlossaryEditor.addingStyleNotes(noteTexts, to: draft)
+                    }
+                }
+            }
         } catch {
             model.learningMessage = CalibrationCopy.couldNotApply(ErrorText.describe(error))
             model.learningFailed = true
