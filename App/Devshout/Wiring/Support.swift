@@ -69,6 +69,11 @@ enum AppDefaultsKey {
     static let onboardingCompleted = "onboarding.completed"
     /// Only ever given as a launch argument (never stored): the Settings tab to open at launch.
     static let openSettingsTab = "openSettingsTab"
+    /// Only ever given as a launch argument: behave as if Claude were not connected, without reading the Keychain
+    /// (`-skipClaudeToken YES`), so a build launched to look at a screen shows no Keychain prompt.
+    static let skipClaudeToken = "skipClaudeToken"
+    /// Only ever given as a launch argument: open the voice calibration window at launch (`-openCalibration YES`).
+    static let openCalibration = "openCalibration"
     static let claudeRawOnly = "claude.rawOnly"
 }
 

@@ -165,6 +165,18 @@ struct TranscriptionSettingsTab: View {
                 Text("Speech-to-text")
             }
 
+            Section("Your voice") {
+                HStack(alignment: .center, spacing: 12) {
+                    // The last result once there is one; until then, what calibration is for.
+                    Text(calibration.lastResult.map(CalibrationCopy.lastResult) ?? CalibrationCopy.settingsExplanation)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(CalibrationCopy.openButton) { calibration.open() }
+                }
+            }
+
             Section("Models") {
                 ForEach(EngineID.allCases, id: \.self) { engine in
                     ModelRow(model: speech, engine: engine)
@@ -191,20 +203,6 @@ struct TranscriptionSettingsTab: View {
                 LabeledContent("Language", value: "English")
             }
 
-            Section("Your voice") {
-                Text(CalibrationCopy.settingsExplanation)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    if let last = calibration.lastResult {
-                        Text(CalibrationCopy.lastResult(last))
-                            .font(.callout)
-                    }
-                    Spacer()
-                    Button(CalibrationCopy.openButton) { calibration.open() }
-                }
-            }
         }
         .formStyle(.grouped)
         .frame(width: SettingsLayout.width, height: 600)

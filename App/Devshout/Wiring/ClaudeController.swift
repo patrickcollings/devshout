@@ -20,7 +20,7 @@ final class ClaudeController {
     /// The same clean-up, with whatever token is saved (not gated): Test Connection must work after a refusal.
     private let testCleaner: ClaudeCLICleaner
     private let cache: ClaudeInstallationCache
-    private let store: KeychainCredentialStore
+    private let store: CachedCredentialStore
     private let installer: ClaudeInstaller
     private let model: ClaudeViewModel
     private let defaults: UserDefaults
@@ -45,7 +45,11 @@ final class ClaudeController {
         let locator = ClaudeLocator(userOverride: pathOverride.map { URL(fileURLWithPath: $0) })
         let cache = ClaudeInstallationCache(locator: locator)
         self.cache = cache
-        let store = KeychainCredentialStore()
+        // One Keychain read per launch (each read can show a permission prompt). `-skipClaudeToken YES` never
+        // touches the Keychain: for launching a build only to look at a screen.
+        let keychain: any CredentialStore = defaults.bool(forKey: AppDefaultsKey.skipClaudeToken)
+            ? EmptyCredentialStore() : KeychainCredentialStore()
+        let store = CachedCredentialStore(keychain)
         self.store = store
         let gate = canClean
         cleaner = ClaudeCLICleaner(
@@ -218,6 +222,8 @@ final class ClaudeController {
         var config = ModeConfig.defaults[.tidy] ?? ModeConfig(id: .tidy, claudeModel: "haiku", timeout: 30)
         config.timeout = max(config.timeout, 30)
         config.customInstructions = nil
+        // If the Keychain refused the token earlier, pressing Test Connection is the user asking to try again.
+        store.retryAfterFailure()
         let cleaner = testCleaner
         let started = Date()
         Task {

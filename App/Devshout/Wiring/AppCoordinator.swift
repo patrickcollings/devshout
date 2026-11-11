@@ -175,6 +175,7 @@ final class AppCoordinator {
         if let name = defaults.string(forKey: AppDefaultsKey.openSettingsTab), let tab = SettingsTab(rawValue: name) {
             openSettings(tab: tab)
         }
+        if defaults.bool(forKey: AppDefaultsKey.openCalibration) { calibration.open() }
     }
 
     // MARK: Windows
