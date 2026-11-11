@@ -124,6 +124,12 @@ public enum CalibrationLearning {
         glossary.allEntries.map(\.entry).filter { !$0.isPattern }
     }
 
+    /// Every word the engines wrote, as `corrections` will see them: what to ask the spelling checker about before
+    /// calling it (the checker lives on the main thread; `corrections` takes a plain predicate).
+    public static func transcriptWords(_ observations: [Observation]) -> Set<String> {
+        Set(observations.flatMap { CalibrationText.words($0.transcript) })
+    }
+
     /// Glossary terms that were written as something else, most frequent first.
     ///
     /// For each term in a sentence, the words the transcript has in its place are read off the alignment: the words

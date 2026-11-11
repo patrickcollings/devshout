@@ -357,3 +357,31 @@ public enum CalibrationScriptBuilder {
         index + 1 < 10 ? "c0\(index + 1)" : "c\(index + 1)"
     }
 }
+
+/// A script as a text file, one sentence per line as `- c01: text` (the format of `bench/sentences.md`, with any
+/// id made of letters, digits, hyphens and underscores). `devshout-cli calibrate` reads the reference sentences
+/// for a folder of recordings from it, and prints a script in it.
+public enum CalibrationScriptFile {
+    public static func render(_ sentences: [CalibrationSentence]) -> String {
+        sentences.map { "- \($0.id): \($0.text)" }.joined(separator: "\n") + "\n"
+    }
+
+    /// Lines that aren't `- id: text` (or `id: text`) are ignored; a repeated id keeps its first sentence.
+    /// A sentence counts as a glossary sentence when it contains one of `glossaryTerms`.
+    public static func parse(_ text: String, glossaryTerms: [String] = []) -> [CalibrationSentence] {
+        var out: [CalibrationSentence] = []
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            var line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("- ") { line = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let id = line[line.startIndex..<colon].trimmingCharacters(in: .whitespaces)
+            let sentence = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            guard !id.isEmpty, !sentence.isEmpty,
+                  id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }),
+                  !out.contains(where: { $0.id == id }) else { continue }
+            let terms = TermHitRate.evaluate(terms: glossaryTerms, reference: sentence, hypothesis: "").terms.map(\.term)
+            out.append(CalibrationSentence(id: id, text: sentence, kind: terms.isEmpty ? .general : .glossary, terms: terms))
+        }
+        return out
+    }
+}

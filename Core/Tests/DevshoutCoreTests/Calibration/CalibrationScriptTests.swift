@@ -153,6 +153,15 @@ private let smallGlossary = GlossaryParser.parse("""
                 == "Could you confirm that the CORSIA rules still apply to this airline?")
     }
 
+    @Test func aScriptRoundTripsThroughItsTextFile() {
+        let script = CalibrationScriptBuilder.script(glossary: smallGlossary)
+        let text = CalibrationScriptFile.render(script)
+        #expect(text.hasPrefix("- c01: Could you check whether the login page"))
+        #expect(CalibrationScriptFile.parse(text, glossaryTerms: CalibrationScorer.glossaryTerms(smallGlossary)) == script)
+        let loose = "# Notes\nfirst: Hello there, how are you?\n- first: A repeat.\n- bad id!: No.\n- s02:\n"
+        #expect(CalibrationScriptFile.parse(loose) == [CalibrationSentence(id: "first", text: "Hello there, how are you?", kind: .general)])
+    }
+
     @Test func theRequestListsEveryGroupWithItsDescriptions() {
         let groups = CalibrationScriptBuilder.termGroups(for: smallGlossary)
         let request = CalibrationScriptBuilder.claudeRequest(for: groups)

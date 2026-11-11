@@ -85,7 +85,11 @@ public struct CalibrationAnalyser: Sendable {
     }
 
     /// Throws only `CancellationError`, when the task is cancelled (the engine in use is still released).
-    public func run(recordings: [CalibrationRecording], engines: [EngineID], glossary: Glossary,
+    ///
+    /// - Parameter warmUp: transcribe the first recording once, unscored, before timing an engine. The first call
+    ///   after a model loads is slower, and the engine that was already in use would otherwise look faster than
+    ///   the one loaded for the comparison.
+    public func run(recordings: [CalibrationRecording], engines: [EngineID], glossary: Glossary, warmUp: Bool = true,
                     progress: @escaping @Sendable (CalibrationProgress, _ engineIndex: Int) -> Void = { _, _ in }) async throws -> CalibrationAnalysis {
         let terms = CalibrationScorer.glossaryTerms(glossary)
         var analysis = CalibrationAnalysis()
@@ -100,6 +104,8 @@ public struct CalibrationAnalyser: Sendable {
                 analysis.failures.append(CalibrationEngineFailure(engine: engine, message: describe(error)))
                 continue
             }
+
+            if warmUp, let first = recordings.first { _ = try? await transcribe(first, engine) }
 
             var scores: [CalibrationSentenceScore] = []
             var observations: [CalibrationLearning.Observation] = []

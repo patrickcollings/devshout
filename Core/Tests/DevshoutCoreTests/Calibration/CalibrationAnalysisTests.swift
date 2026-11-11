@@ -421,7 +421,7 @@ private func engineScore(_ engine: EngineID, words: Int = 150, errors: Int, term
         let log = Log()
         let progress = Log()
         let analysis = try await analyser(log: log).run(
-            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary,
+            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary, warmUp: false,
             progress: { step, index in
                 progress.add(String(format: "%.2f", step.fraction(engineIndex: index, engineCount: 2)))
             })
@@ -455,10 +455,19 @@ private func engineScore(_ engine: EngineID, words: Int = 150, errors: Int, term
         #expect(report.contains("Parakeet  Check the causia flag in my supplies.   [2 of 7 words wrong]"))
     }
 
+    @Test func eachEngineIsWarmedUpOnTheFirstRecordingBeforeItIsTimed() async throws {
+        let log = Log()
+        let analysis = try await analyser(log: log).run(recordings: Self.recordings, engines: [.parakeetV3], glossary: glossary)
+        #expect(log.events == ["prepare Parakeet", "Parakeet c01", "Parakeet c01", "Parakeet c02", "release Parakeet"])
+        // The warm-up isn't scored.
+        #expect(analysis.scores[0].sentences.map(\.sentenceID) == ["c01", "c02"])
+        #expect(CalibrationLearning.transcriptWords(analysis.observations).contains("causia"))
+    }
+
     @Test func anEngineThatFailsIsReportedAndTheOtherStillRuns() async throws {
         let log = Log()
         let loadFailure = try await analyser(log: log, failing: .parakeetV3).run(
-            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary)
+            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary, warmUp: false)
         #expect(loadFailure.failures == [CalibrationEngineFailure(engine: .parakeetV3, message: "it broke")])
         #expect(loadFailure.scores.map(\.engine) == [.whisperLargeV3Turbo])
         #expect(loadFailure.recommendation.verdict == .onlyOne)
@@ -466,7 +475,7 @@ private func engineScore(_ engine: EngineID, words: Int = 150, errors: Int, term
 
         // Failing part-way through the script drops the engine rather than scoring it on less.
         let midFailure = try await analyser(log: Log(), failing: .whisperLargeV3Turbo, failAt: "c02").run(
-            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary)
+            recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary, warmUp: false)
         #expect(midFailure.scores.map(\.engine) == [.parakeetV3])
         #expect(midFailure.failures.map(\.engine) == [.whisperLargeV3Turbo])
         #expect(midFailure.observations.allSatisfy { $0.engine == .parakeetV3 })
@@ -483,7 +492,8 @@ private func engineScore(_ engine: EngineID, words: Int = 150, errors: Int, term
             },
             release: { engine in log.add("release \(engine.shortName)") })
         let task = Task {
-            try await analyser.run(recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo], glossary: glossary)
+            try await analyser.run(recordings: Self.recordings, engines: [.parakeetV3, .whisperLargeV3Turbo],
+                                   glossary: glossary, warmUp: false)
         }
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(log.events == ["Parakeet c01", "release Parakeet"])
