@@ -16,6 +16,7 @@ struct DevshoutCLI: AsyncParsableCommand {
         subcommands: [
             RecordCommand.self,
             TranscribeCommand.self,
+            DictateFileCommand.self,
             CleanupCommand.self,
             ConnectCommand.self,
             ClaudeProbeCommand.self,
