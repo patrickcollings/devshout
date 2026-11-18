@@ -49,7 +49,7 @@ targets:
         LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.productivity
         NSMicrophoneUsageDescription: "devshout records your voice only while dictation is on. Audio stays on this Mac."
-        NSHumanReadableCopyright: "© 2026 Patrick Collings"
+        NSHumanReadableCopyright: "© 2026 the devshout contributors"
     entitlements:
       path: App/Devshout.entitlements
       properties: {}

@@ -5,7 +5,7 @@ import Foundation
 /// `- **Term** — description` with a `  - heard: a, b` sub-bullet. `GlossaryParser.parse` of the output gives
 /// back an equal glossary. (An HTML comment on the same line as an entry is not kept.)
 ///
-/// The app's glossary editor saves Patrick's text as typed (`GlossaryFile.save(text:)`); this writer is for
+/// The app's glossary editor saves the user's text as typed (`GlossaryFile.save(text:)`); this writer is for
 /// glossaries built in code. "Add correction" edits the text in place instead (`GlossaryEditor`).
 public enum GlossaryWriter {
     public static func markdown(_ glossary: Glossary) -> String {

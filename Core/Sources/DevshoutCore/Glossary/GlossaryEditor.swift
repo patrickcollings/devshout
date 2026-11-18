@@ -1,6 +1,6 @@
 import Foundation
 
-/// Small edits to the glossary's text that keep everything else exactly as Patrick wrote it,
+/// Small edits to the glossary's text that keep everything else exactly as the user wrote it,
 /// for "Add correction to glossary" in History (PLAN §6.7, which writes to the same `glossary.md`).
 public enum GlossaryEditor {
     /// Where a new entry goes when the term isn't in the glossary yet.

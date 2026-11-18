@@ -87,7 +87,7 @@ private let smallGlossary = GlossaryParser.parse("""
         #expect(groups[0].terms == ["CORSIA", "My Supply"])
         #expect(groups[1].terms == ["NDC", "proponent"])
         #expect(groups[2].terms == ["procurement", "PDD"])
-        #expect(groups[3] == CalibrationTermGroup(kind: .people, terms: ["Patrick Collings"], descriptions: [nil]))
+        #expect(groups[3] == CalibrationTermGroup(kind: .people, terms: ["Declan Hollings"], descriptions: [nil]))
         #expect(groups[4].kind == .ticket)
         #expect(groups[4].terms == ["AB-1482"])
     }

@@ -3,7 +3,7 @@ import Testing
 @testable import DevshoutCore
 
 @Suite struct ClaudeLocatorTests {
-    let home = "/Users/patrick"
+    let home = "/Users/sam"
 
     /// A runner that answers `--version` with `version` and the login shell with `shellAnswer`.
     func runner(version: String = "2.1.300 (Claude Code)", shellAnswer: String? = nil) -> StubRunner {
@@ -65,10 +65,10 @@ import Testing
     }
 
     @Test func loginShellIsTheLastResort() async throws {
-        let fs = FakeFileSystem(executables: ["/bin/zsh", "/Users/patrick/bin/claude"])
-        let stub = runner(shellAnswer: "Welcome to zsh!\n/Users/patrick/bin/claude\n")
+        let fs = FakeFileSystem(executables: ["/bin/zsh", "/Users/sam/bin/claude"])
+        let stub = runner(shellAnswer: "Welcome to zsh!\n/Users/sam/bin/claude\n")
         let found = try await locator(fs, runner: stub).locate()
-        #expect(found.url.path == "/Users/patrick/bin/claude")
+        #expect(found.url.path == "/Users/sam/bin/claude")
         let shellRequest = try #require(stub.requests.first { $0.arguments.first == "-l" })
         #expect(shellRequest.executable.path == "/bin/zsh")
         #expect(shellRequest.arguments == ["-l", "-c", "command -v claude"])

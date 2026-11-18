@@ -4,17 +4,17 @@ import Testing
 @Suite struct GlossaryParserTests {
     @Test func parsesThePlanExample() throws {
         let g = try GlossaryFixtures.glossary("sample.md")
-        #expect(g.title == "Abatable glossary")
+        #expect(g.title == "Team glossary")
         #expect(g.sections.map(\.kind) == [.other, .terms, .people, .patterns, .style])
         #expect(g.terms.map(\.term) == ["CORSIA", "NDC", "My Supply", "proponent", "procurement"])
         #expect(g.entry("CORSIA") == GlossaryEntry(
             term: "CORSIA", description: "Carbon Offsetting and Reduction Scheme for International Aviation",
             heard: ["core sea", "corsair", "causia"]))
-        #expect(g.entry("My Supply")?.description == "Abatable product: a buyer's supply of credits")
+        #expect(g.entry("My Supply")?.description == "Product: a buyer's supply of credits")
         #expect(g.entry("procurement") == GlossaryEntry(term: "procurement"))
         #expect(g.people == [
             GlossaryEntry(term: "Siobhán Murphy", heard: ["shiv on", "chevonne"]),
-            GlossaryEntry(term: "Patrick Collings", heard: ["Patrick Collins"]),
+            GlossaryEntry(term: "Declan Hollings", heard: ["Declan Hollins"]),
         ])
         #expect(g.patterns == [GlossaryEntry(term: "AB-{n}", description: "Linear ticket IDs",
                                              heard: ["a b {n}", "AB {n}", "ABE {n}"])])
@@ -121,10 +121,10 @@ import Testing
     }
 
     @Test func inlineHeardWithoutDescription() {
-        let g = GlossaryParser.parse("## People\n- **Siobhán Murphy** — heard: shiv on\n- Patrick: heard: Patrick Collins\n")
+        let g = GlossaryParser.parse("## People\n- **Siobhán Murphy** — heard: shiv on\n- Declan: heard: Declan Hollins\n")
         #expect(g.people == [
             GlossaryEntry(term: "Siobhán Murphy", heard: ["shiv on"]),
-            GlossaryEntry(term: "Patrick", heard: ["Patrick Collins"]),
+            GlossaryEntry(term: "Declan", heard: ["Declan Hollins"]),
         ])
     }
 

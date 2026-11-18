@@ -428,7 +428,7 @@ private let benchDirectory: URL = {
         let terms = BenchGlossaryTerms.terms(fromMarkdown: markdown)
         for expected in ["CORSIA", "My Supply", "NDC", "proponent", "procurement", "PDD", "Article 6", "ARR", "ERPA",
                          "UNFCCC", "Supabase", "Verra", "Gold Standard", "buffer pool", "retirements", "In Progress",
-                         "vintage", "registry", "corresponding adjustment", "Patrick Collings"] {
+                         "vintage", "registry", "corresponding adjustment", "Declan Hollings"] {
             #expect(terms.contains(expected), "missing \(expected)")
         }
         #expect(!terms.contains("AB-{n}"))

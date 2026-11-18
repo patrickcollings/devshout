@@ -3,7 +3,7 @@
 > Status: **signed off with the changes in §0.** Nothing is built yet. Everything below "Open questions" is a proposal; the numbered decisions in §1 are settled and not reopened.
 > Written 2026-11-10. Versions and docs were checked on that date.
 
-devshout is a macOS menu bar dictation app. Press a hotkey and talk, often for five minutes of rambling instructions to a coding agent. You get back an accurate, cleaned-up transcript, pasted into whatever app has focus. Transcription runs locally and costs nothing. Clean-up runs on each user's own Claude subscription through the Claude Code CLI. What sets it apart from superwhisper is a **team glossary**, so Abatable's jargon (CORSIA, NDC, My Supply, procurement, proponent, people's names, AB-1234) comes out right.
+devshout is a macOS menu bar dictation app. Press a hotkey and talk, often for five minutes of rambling instructions to a coding agent. You get back an accurate, cleaned-up transcript, pasted into whatever app has focus. Transcription runs locally and costs nothing. Clean-up runs on each user's own Claude subscription through the Claude Code CLI. What sets it apart from superwhisper is a **team glossary**, so your team's jargon (CORSIA, NDC, My Supply, procurement, proponent, people's names, AB-1234) comes out right.
 
 ---
 
@@ -25,20 +25,20 @@ devshout is a macOS menu bar dictation app. Press a hotkey and talk, often for f
 
 ---
 
-## 0. Changes after Patrick's review (2026-11-10). These override anything below.
+## 0. Changes after the owner's review (2026-11-10). These override anything below.
 
 1. **Claude sign-in uses `claude setup-token` (approach B).** The app runs `claude setup-token` in a pseudo-terminal, reads the printed token, stores it **only in this Mac's Keychain** and passes it to `claude -p` as `CLAUDE_CODE_OAUTH_TOKEN`. `CLAUDE_CONFIG_DIR` still points at an empty devshout folder, so the user's own hooks, plugins and CLAUDE.md never load. There is also a "paste a token" field, for when the in-app flow fails and the token was made in Terminal.
    - **Expiry:** the token lasts one year and can't be refreshed silently (there is no refresh token). The app stores the date the token was created, warns from 30 days before expiry (menu bar badge and Settings), marks the token as needing reconnection the moment a run fails on authentication, and offers a one-click **Reconnect**, which re-runs the browser approval. Until then, Tidy and Structure paste the raw text.
    - **No API-key option, ever.** Subscription only.
 2. **No accounts or user management.** It's a desktop app for one person, and nothing is stored in the cloud. "Connect" just means the one-time Claude approval above.
-3. **The repo stays private.** No releases or update checker for now. Patrick runs the app built by CI (as an artefact) or builds it locally in Xcode.
+3. **The repo stays private.** No releases or update checker for now. The developer runs the app built by CI (as an artefact) or builds it locally in Xcode.
    - **CI costs nothing:** the macOS workflow is **manual only** (`workflow_dispatch`) and is run sparingly at integration points. The Linux core tests run on PRs that touch `Core/`.
-   - Both come out of Patrick's personal free Actions minutes (the repo is owned by his personal account). His Actions budget should be $0, so runs stop rather than bill.
-4. **No team glossary sync.** Settings has a **Glossary editor**: one `glossary.md` you paste in and edit in the app. Patrick will supply the real content. The generator, git/URL sources and "suggest for team" are dropped for now. "Add correction" (v0.3) writes to the same file.
-5. **Designed for Patrick's MacBook Pro (M1 Pro) only.** macOS 14+, arm64.
+   - Both come out of the repo owner's free Actions minutes. The Actions budget should be $0, so runs stop rather than bill.
+4. **No team glossary sync.** Settings has a **Glossary editor**: one `glossary.md` you paste in and edit in the app. The user supplies the real content. The generator, git/URL sources and "suggest for team" are dropped for now. "Add correction" (v0.3) writes to the same file.
+5. **Designed for Apple silicon Macs (developed on an M1 Pro).** macOS 14+, arm64.
 6. **British English only** in clean-up output and UI copy. Dictation is English only.
 7. **Layout change:** two local Swift packages instead of one. `Core/` is pure Foundation and builds and tests on Linux. `Mac/` holds the macOS code and the `devshout-cli` spike tool and depends on Core. `project.yml` (XcodeGen) builds the app from both. See `CLAUDE.md` for the current layout.
-8. **The first version Patrick tests = Phase 0 spike CLI + v0.1**, plus a minimal recording pill so there is visible feedback.
+8. **The first version to test = Phase 0 spike CLI + v0.1**, plus a minimal recording pill so there is visible feedback.
 
 ---
 
@@ -402,7 +402,7 @@ Without a connection, Raw mode works fully. Tidy/Structure hotkeys still record 
 ### 6.1 Format (`glossary.md`, human-edited, diff-friendly)
 
 ```markdown
-# Abatable glossary
+# Team glossary
 <!-- devshout glossary v1. Order matters: earlier entries are more important (Whisper gets the top ones). -->
 
 ## Terms
@@ -410,14 +410,14 @@ Without a connection, Raw mode works fully. Tidy/Structure hotkeys still record 
   - heard: core sea, corsair, causia
 - **NDC** — Nationally Determined Contribution
   - heard: N D C, endy see
-- **My Supply** — Abatable product: a buyer's supply of credits
+- **My Supply** — Product: a buyer's supply of credits
   - heard: my supplies, mice apply
 - **proponent** — the developer of a carbon project
 - **procurement**
 
 ## People
 - **Siobhán Murphy** — heard: shiv on, chevonne
-- **Patrick Collings** — heard: Patrick Collins
+- **Declan Hollings** — heard: Declan Hollins
 
 ## Patterns
 - **AB-{n}** — Linear ticket IDs
@@ -438,7 +438,7 @@ The rules (`GlossaryParser`, tested):
 ### 6.2 Sources and merging
 
 - **Team glossary**, one of:
-  1. **A git repo** plus path, e.g. `git@github.com:abatable/<repo>.git` + `docs/glossary.md`. Pulled with the system `git` (Xcode Command Line Tools), shallow, every 6 h and on "Sync now", using the teammate's existing git credentials.
+  1. **A git repo** plus path, e.g. `git@github.com:your-org/<repo>.git` + `docs/glossary.md`. Pulled with the system `git` (Xcode Command Line Tools), shallow, every 6 h and on "Sync now", using the teammate's existing git credentials.
   2. **An HTTPS URL** (raw file), optionally with a token stored in the Keychain.
   3. **A local or shared file**, e.g. a Google Drive or Dropbox folder, watched for changes.
 - **Personal glossary**: `glossary.local.md`. This is where "Add correction" writes.
@@ -465,7 +465,7 @@ FluidAudio has **CTC-based custom-vocabulary boosting** for Parakeet TDT 0.6B v2
 
 ```bash
 devshout-cli glossary generate \
-  --docs ~/code/abatable-app/docs --docs ~/code/abatable-app/README.md \
+  --docs ~/code/your-app/docs --docs ~/code/your-app/README.md \
   --names team-names.txt \            # one "Full Name" per line, optional "— role"
   --existing glossary.md \            # merge, never delete hand-written entries
   --max-terms 150 \
@@ -607,9 +607,9 @@ Defaults (all can be changed; the recorder warns about conflicts):
 
 ## 9. Phases and estimates
 
-These are estimates of focused build time with Claude Code doing most of the typing (agent-days), plus the hands-on time Patrick needs on his Mac. The order matches the brief, and the spike decides defaults before any UI is built.
+These are estimates of focused build time with Claude Code doing most of the typing (agent-days), plus the hands-on time the developer needs on their Mac. The order matches the brief, and the spike decides defaults before any UI is built.
 
-### Phase 0: Spike (≈ 2–3 days build + ~1.5 h of Patrick's time)
+### Phase 0: Spike (≈ 2–3 days build + ~1.5 h of the developer's time)
 
 **Goal:** settle the facts that change the design (speed, accuracy, Claude latency, prompt quality) before writing UI.
 
@@ -621,8 +621,8 @@ These are estimates of focused build time with Claude Code doing most of the typ
 - `bench --set bench/ --engines parakeet,whisper --modes raw,tidy,structure` runs the matrix and writes `bench/results/<date>.md` + `.csv`.
 - `glossary` parse/preview (the first version of the parser).
 
-**Corpus** (in `bench/`; Patrick records it once, ~20 min):
-- **10 jargon sentences** (first draft; Patrick swaps in real names and projects):
+**Corpus** (in `bench/`; recorded once, ~20 min):
+- **10 jargon sentences** (first draft; swap in real names and projects):
   1. Can you check whether the CORSIA eligibility flag is set on every project in My Supply before Friday?
   2. The proponent sent an updated PDD, so re-run the procurement scoring on AB-1234.
   3. Map each NDC target to its host country and show the corresponding adjustment status.
@@ -633,7 +633,7 @@ These are estimates of focused build time with Claude Code doing most of the typ
   8. Our procurement pipeline should exclude any proponent without a signed ERPA.
   9. ⟨teammate⟩ and ⟨teammate⟩ are pairing on the Supabase migration for the retirements endpoint.
   10. Rename the NDC field to "nationally determined contribution" and add a tooltip linking to the UNFCCC page.
-- **One 5-minute ramble**, spoken naturally (not read) from `bench/ramble-outline.md`: instructions to a coding agent covering **8 listed points** with self-corrections, numbers and two ticket IDs. Its reference is Patrick's hand-corrected transcript plus the list of 8 points.
+- **One 5-minute ramble**, spoken naturally (not read) from `bench/ramble-outline.md`: instructions to a coding agent covering **8 listed points** with self-corrections, numbers and two ticket IDs. Its reference is a hand-corrected transcript plus the list of 8 points.
 - **superwhisper comparison:** run the same WAV files through superwhisper's file transcription (or, failing that, dictate live with superwhisper) in its closest modes. Paste its output into `bench/superwhisper/` and note the times.
 
 **Metrics** (pure code in `DevshoutCore/Bench`, unit-tested):
@@ -642,7 +642,7 @@ These are estimates of focused build time with Claude Code doing most of the typ
 - Time from stop to text and from stop to paste-ready
 - Model load and download size
 - Claude start-up (cold, warm, pre-warmed)
-- **Structure point recall** (x/8, checked by `CoverageCheck` plus Patrick's eye)
+- **Structure point recall** (x/8, checked by `CoverageCheck` plus a read by eye)
 
 **Exit criteria / decisions recorded in `bench/results`:**
 - Default engine
@@ -677,11 +677,11 @@ These are estimates of focused build time with Claude Code doing most of the typ
 
 - Glossary format, parser and writer, merging, sources (git, URL, file) with sync, TextFixer, Whisper prompt builder and the Glossary tab.
 - **Add correction** flow.
-- **Generator** (`devshout-cli glossary generate`, optional Claude assist) and a first real Abatable glossary.
+- **Generator** (`devshout-cli glossary generate`, optional Claude assist) and a first real team glossary.
 - Stable self-signed signing, DMG, `release.yml`, update checker and window, `docs/INSTALL.md` with screenshots.
 - A teammate install dry run.
 
-**Total: ≈ 17–24 agent-days plus ~5–6 hours of Patrick on his Mac.** Later (v0.4+): Parakeet CTC vocabulary boosting, "install update for me", custom modes (e.g. "Commit message", "Slack reply"), modifier-only triggers, auto-submit per app.
+**Total: ≈ 17–24 agent-days plus ~5–6 hours of the developer on their Mac.** Later (v0.4+): Parakeet CTC vocabulary boosting, "install update for me", custom modes (e.g. "Commit message", "Slack reply"), modifier-only triggers, auto-submit per app.
 
 ---
 
@@ -723,14 +723,14 @@ These are estimates of focused build time with Claude Code doing most of the typ
 **Cost on a private personal repo:** included minutes are counted at the Linux rate, and macOS minutes count **10×**. GitHub Free includes 2,000 min/month, which is about **200 macOS minutes, or roughly 15–20 macOS CI runs a month**; Pro (3,000) gives about 300. Past that, macOS costs about **$0.062/min** (≈ $0.60–0.75 per run; GitHub cut prices on 1 Jan 2026). To stay inside that:
 1. Keep most logic in Core, which tests on Linux.
 2. Run macOS CI only on PRs and `main`, not every branch push.
-3. Optionally use a **self-hosted runner on Patrick's Mac** (free, and it has the ANE, so it could even run real-model smoke tests).
+3. Optionally use a **self-hosted runner on the developer's Mac** (free, and it has the ANE, so it could even run real-model smoke tests).
 4. Make the repo public (Q3), which makes standard runners free.
 
 ### 10.3 Things to check by hand, per phase
 
-The spike CLI is the integration test bench for engines and Claude: Patrick runs `devshout-cli bench` locally after any engine or prompt change and commits the results file, so regressions show up in diffs.
+The spike CLI is the integration test bench for engines and Claude: The developer runs `devshout-cli bench` locally after any engine or prompt change and commits the results file, so regressions show up in diffs.
 
-### 10.4 Manual test checklist for Patrick's Mac (becomes `docs/MANUAL_TESTS.md`)
+### 10.4 Manual test checklist for a developer's Mac (becomes `docs/MANUAL_TESTS.md`)
 
 **Install and permissions**
 - [ ] Fresh install from the DMG: Gatekeeper block → Open Anyway works (as in INSTALL.md)
@@ -764,7 +764,7 @@ The spike CLI is the integration test bench for engines and Claude: Patrick runs
 - [ ] History: search, play audio, Re-run as Structure, Re-transcribe with Whisper, copy raw and cleaned
 - [ ] Add correction "core sea" → CORSIA → re-run → fixed; also fixed in Raw mode next time
 - [ ] The team glossary from git syncs; offline sync keeps the last good copy; Whisper preview shows the token count
-- [ ] Generator run on an Abatable docs folder → a sensible `glossary.md` diff
+- [ ] Generator run on a team docs folder → a sensible `glossary.md` diff
 
 **Polish**
 - [ ] Light/dark mode, a non-Retina external display, full-screen apps (overlay visible), several Spaces
@@ -790,7 +790,7 @@ The spike CLI is the integration test bench for engines and Claude: Patrick runs
 | R11 | **Mic quirks**: Bluetooth headsets drop to low-quality HFP when the mic opens; the first word gets clipped while the engine starts | Medium / Low | Fast engine start (prepared engine, ~100 ms); spike measures the start delay; input picker; a hint to prefer the built-in or a wired mic; no always-on mic (privacy indicator). |
 | R12 | **Memory/CPU**: models plus Core ML compile on first load (can take 10–60 s once) | Medium / Low | Load only the selected engine; first-load compile during onboarding with progress; optional unload when idle. |
 | R13 | **macOS CI cost** on a private repo | High / Low | Linux-testable core; macOS only on PRs and main; cache; self-hosted Mac runner or a public repo (§10.2). |
-| R14 | **Can't build or run here (Linux)** | Certain / Medium | Core is Linux-testable in this sandbox; the macOS parts are thin; CI builds every PR; the spike plus manual checklist on Patrick's Mac; each phase ends with a hands-on session. |
+| R14 | **Can't build or run here (Linux)** | Certain / Medium | Core is Linux-testable in this sandbox; the macOS parts are thin; CI builds every PR; the spike plus manual checklist on the developer's Mac; each phase ends with a hands-on session. |
 | R15 | **Glossary quality / sprawl** (too many terms dilute the Whisper prompt; wrong `heard:` fixes over-correct) | Medium / Low | Ordering and pinning; token budget shown; TextFixer whole-word only and switchable; generator output reviewed in a PR; per-entry history of "Add correction". |
 | R16 | **Subscription limits**: clean-ups share the user's Claude limits | Low / Low | Small token counts; Haiku for Tidy; usage per run in History (`usage` from the JSON output). |
 
@@ -806,13 +806,13 @@ The docs say third-party apps "may not collect, store, or intermediate Claude.ai
 → **Recommend separate by default.** Teammates' own hooks, plugins, MCP servers and CLAUDE.md never load on clean-ups (faster and safer), and Disconnect is clean. It costs one extra browser click at onboarding.
 
 **Q3. How do teammates get releases from a private repo?** Unauthenticated users can't see private Releases or call the API.
-→ **Recommend making `devshout` public (MIT) once v0.3 is ready.** The app has no secrets, the team glossary stays in a private Abatable repo, updates need no tokens, and standard GitHub Actions runners become free for public repos, which removes the macOS cost. Alternatives: a public `devshout-releases` repo holding only DMGs; or add teammates as collaborators and have the app use their `gh` token (clunky).
+→ **Recommend making `devshout` public (MIT) once v0.3 is ready.** The app has no secrets, the team glossary stays in a private team repo, updates need no tokens, and standard GitHub Actions runners become free for public repos, which removes the macOS cost. Alternatives: a public `devshout-releases` repo holding only DMGs; or add teammates as collaborators and have the app use their `gh` token (clunky).
 
 **Q4. Where does the team glossary live?**
-→ **Recommend `docs/glossary.md` in an existing private Abatable GitHub repo** (the one whose docs feed the generator), pulled with each teammate's git credentials, with changes by PR. Also support a shared-drive file for anyone without git.
+→ **Recommend `docs/glossary.md` in an existing private team GitHub repo** (the one whose docs feed the generator), pulled with each teammate's git credentials, with changes by PR. Also support a shared-drive file for anyone without git.
 
 **Q5. Self-signed certificate instead of plain ad-hoc signing?** (Decision 11 said unsigned or ad-hoc.)
-→ **Recommend a stable self-signed certificate.** It costs nothing, the install steps are the same, and it stops every update from silently revoking Accessibility and Microphone permission. Patrick makes it once in Keychain Access, and it is stored as a CI secret.
+→ **Recommend a stable self-signed certificate.** It costs nothing, the install steps are the same, and it stops every update from silently revoking Accessibility and Microphone permission. The developer makes it once in Keychain Access, and it is stored as a CI secret.
 
 **Q6. Minimum platform?**
 → **Recommend macOS 14+ on Apple Silicon only.** FluidAudio needs 14, and Intel Macs lack the Neural Engine. Check that no teammate is on an Intel Mac or macOS 13.

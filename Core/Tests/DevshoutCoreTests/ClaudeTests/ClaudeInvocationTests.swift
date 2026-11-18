@@ -3,9 +3,9 @@ import Testing
 @testable import DevshoutCore
 
 @Suite struct ClaudeInvocationTests {
-    let claude = URL(fileURLWithPath: "/Users/patrick/.local/bin/claude")
-    let config = URL(fileURLWithPath: "/Users/patrick/Library/Application Support/devshout/claude")
-    let cwd = URL(fileURLWithPath: "/Users/patrick/Library/Application Support/devshout/claude-cwd")
+    let claude = URL(fileURLWithPath: "/Users/sam/.local/bin/claude")
+    let config = URL(fileURLWithPath: "/Users/sam/Library/Application Support/devshout/claude")
+    let cwd = URL(fileURLWithPath: "/Users/sam/Library/Application Support/devshout/claude-cwd")
     let promptFile = URL(fileURLWithPath: "/var/folders/xy/T/devshout-system.md")
 
     func invocation(model: String = "haiku", systemPrompt: ClaudeInvocation.SystemPrompt? = nil,
@@ -48,13 +48,13 @@ import Testing
 
     @Test func exactEnvironment() {
         #expect(invocation().environment == [
-            "HOME": "/Users/patrick",
-            "USER": "patrick",
+            "HOME": "/Users/sam",
+            "USER": "sam",
             "LANG": "en_GB.UTF-8",
             "TMPDIR": "/var/folders/xy/T/",
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/Users/patrick/.local/bin",
-            "CLAUDE_CONFIG_DIR": "/Users/patrick/Library/Application Support/devshout/claude",
-            "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-test-token",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/Users/sam/.local/bin",
+            "CLAUDE_CONFIG_DIR": "/Users/sam/Library/Application Support/devshout/claude",
+            "CLAUDE_CODE_OAUTH_TOKEN": "fake-token-for-tests",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
             "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1",
@@ -65,7 +65,7 @@ import Testing
     @Test func configDirectoryCanBeLeftUnset() {
         let env = invocation(configDirectory: .some(nil)).environment
         #expect(env["CLAUDE_CONFIG_DIR"] == nil)
-        #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token")
+        #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == "fake-token-for-tests")
     }
 
     @Test func claudeInASystemDirectoryIsNotAddedTwice() {
@@ -77,7 +77,7 @@ import Testing
     @Test func extraPathIsAppended() {
         var inv = invocation()
         inv.extraPath = ["/opt/homebrew/bin", "/usr/bin", "/opt/homebrew/bin"]
-        #expect(inv.environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin:/Users/patrick/.local/bin:/opt/homebrew/bin")
+        #expect(inv.environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin:/Users/sam/.local/bin:/opt/homebrew/bin")
     }
 
     @Test func forbiddenKeysAreScrubbed() {

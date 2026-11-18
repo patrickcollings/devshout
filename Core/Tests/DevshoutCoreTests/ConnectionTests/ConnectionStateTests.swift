@@ -160,15 +160,15 @@ import Testing
 
 @Suite struct ClaudeSetupCommandTests {
     @Test func cleanEnvironment() {
-        let claude = URL(fileURLWithPath: "/Users/patrick/.local/bin/claude")
-        let env = ClaudeSetupCommand.environment(claudeExecutable: claude, home: "/Users/patrick", user: "patrick",
+        let claude = URL(fileURLWithPath: "/Users/sam/.local/bin/claude")
+        let env = ClaudeSetupCommand.environment(claudeExecutable: claude, home: "/Users/sam", user: "sam",
                                                  lang: nil, tmpDir: "/var/folders/x/T/",
                                                  extra: ["ANTHROPIC_API_KEY": "nope", "CLAUDE_CODE_OAUTH_TOKEN": "nope", "FOO": "bar"])
-        #expect(env["HOME"] == "/Users/patrick")
-        #expect(env["USER"] == "patrick")
+        #expect(env["HOME"] == "/Users/sam")
+        #expect(env["USER"] == "sam")
         #expect(env["LANG"] == "en_GB.UTF-8")
         #expect(env["TERM"] == "xterm-256color")
-        #expect(env["PATH"] == "/Users/patrick/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        #expect(env["PATH"] == "/Users/sam/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         #expect(env["TMPDIR"] == "/var/folders/x/T/")
         #expect(env["ANTHROPIC_API_KEY"] == nil)
         #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == nil)
@@ -286,10 +286,10 @@ import Testing
 
 @Suite struct ClaudeInstallationTests {
     @Test func summary() {
-        let i = ClaudeInstallation(url: URL(fileURLWithPath: "/Users/patrick/.local/bin/claude"), version: ClaudeVersion(2, 1, 322))
-        #expect(i.summary(homeDirectory: "/Users/patrick") == "Claude Code 2.1.322 (~/.local/bin/claude)")
+        let i = ClaudeInstallation(url: URL(fileURLWithPath: "/Users/sam/.local/bin/claude"), version: ClaudeVersion(2, 1, 322))
+        #expect(i.summary(homeDirectory: "/Users/sam") == "Claude Code 2.1.322 (~/.local/bin/claude)")
         #expect(ClaudeInstallation(url: URL(fileURLWithPath: "/opt/homebrew/bin/claude"), version: ClaudeVersion(2, 1, 0))
-            .summary(homeDirectory: "/Users/patrick") == "Claude Code 2.1.0 (/opt/homebrew/bin/claude)")
+            .summary(homeDirectory: "/Users/sam") == "Claude Code 2.1.0 (/opt/homebrew/bin/claude)")
     }
 
     @Test func authFailureBelongsToOneToken() throws {

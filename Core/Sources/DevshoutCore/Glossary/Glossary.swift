@@ -1,6 +1,6 @@
 import Foundation
 
-// The glossary model (PLAN §6.1). One `glossary.md` that Patrick edits in the app (PLAN §0 item 4).
+// The glossary model (PLAN §6.1). One `glossary.md` that the user edits in the app (PLAN §0 item 4).
 // The model keeps every line of a hand-written file: lines that are not entries are kept as notes,
 // so writing a parsed glossary back out loses nothing that matters and Claude still sees them.
 

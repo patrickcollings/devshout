@@ -5,7 +5,7 @@
 ## Terms
 - !**CORSIA** — Carbon Offsetting and Reduction Scheme for International Aviation
   - heard: core sea, corsair, causia, cor see ah
-- !**My Supply** — Abatable product: a buyer's supply of credits
+- !**My Supply** — Product: a buyer's supply of credits
   - heard: my supplies, mice apply, my supplier
 - !**NDC** — Nationally Determined Contribution
   - heard: N D C, endy see, and see
@@ -40,7 +40,7 @@
 
 ## People
 <!-- Replace with the real names you read out in s04 and s09. -->
-- **Patrick Collings** — heard: Patrick Collins
+- **Declan Hollings** — heard: Declan Hollins
 
 ## Patterns
 - **AB-{n}** — Linear ticket IDs
