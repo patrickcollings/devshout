@@ -46,8 +46,8 @@ public enum MicRecorderError: Error, LocalizedError, Equatable {
 /// Every buffer is written to the file *before* it is yielded to the stream or measured for the level meter.
 /// All state lives on one serial queue; the tap callback only mixes the hardware buffer to mono and hands it over.
 public final class MicRecorder: AudioRecorder, @unchecked Sendable {
-    private let logger = Logger(subsystem: "com.patrickcollings.devshout", category: "MicRecorder")
-    private let queue = DispatchQueue(label: "com.patrickcollings.devshout.mic", qos: .userInitiated)
+    private let logger = Logger(subsystem: "app.devshout.mac", category: "MicRecorder")
+    private let queue = DispatchQueue(label: "app.devshout.mac.mic", qos: .userInitiated)
 
     // Settings, read when a recording starts. Guarded by `settingsLock`.
     private let settingsLock = NSLock()
