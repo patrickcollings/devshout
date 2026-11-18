@@ -28,7 +28,7 @@ import Testing
         func delete() throws { lock.withLock { stored = nil } }
     }
 
-    static let token = ClaudeCredential(token: "sk-ant-oat01-test", createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+    static let token = ClaudeCredential(token: "fake-token-for-tests", createdAt: Date(timeIntervalSince1970: 1_800_000_000))
 
     @Test func readsTheWrappedStoreOnce() throws {
         let inner = CountingStore(Self.token)

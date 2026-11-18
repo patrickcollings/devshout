@@ -8,7 +8,7 @@ import Foundation
 enum PreviewData {
     static let devices = [
         InputDeviceOption(id: "builtin", name: "MacBook Pro Microphone"),
-        InputDeviceOption(id: "airpods", name: "Patrick's AirPods Pro"),
+        InputDeviceOption(id: "airpods", name: "AirPods Pro"),
     ]
 
     static let levelHistory: [Float] = (0..<AudioLevelViewModel.historyLength).map { i in
@@ -29,7 +29,7 @@ enum PreviewData {
     static let downloading = SpeechModelStatus.downloading(fraction: 0.42, bytesDone: 204_000_000,
                                                           bytesTotal: 486_000_000, bytesPerSecond: 18_500_000)
 
-    nonisolated static let installation = ClaudeInstallation(path: "/Users/patrick/.local/bin/claude", version: "2.1.301")
+    nonisolated static let installation = ClaudeInstallation(path: "/Users/sam/.local/bin/claude", version: "2.1.301")
 
     static func claude(_ account: ClaudeAccountStatus = .connected(tokenCreatedAt: Date().addingTimeInterval(-90 * 86_400)),
                        install: ClaudeInstallStatus = .found(installation),
@@ -92,7 +92,7 @@ enum PreviewData {
     }()
 
     static let glossaryText = """
-    # Abatable glossary
+    # Team glossary
 
     ## Terms
     - **CORSIA** — Carbon Offsetting and Reduction Scheme for International Aviation

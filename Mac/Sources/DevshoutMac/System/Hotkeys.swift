@@ -7,7 +7,7 @@
 //   for a key we think is held means its key-up was missed, and the classifier replays it
 //   (`repeatsPossible: false`). If Carbon did repeat, a long hold would stop at the first repeat.
 // - ⌥⌘Space is also macOS's default for "Show Finder search window"; if the system keeps it, the recorder in
-//   Settings lets Patrick pick another.
+//   Settings lets the user pick another.
 // - Esc is registered as a plain Carbon hotkey only while recording, so it's swallowed system-wide then.
 
 import AppKit

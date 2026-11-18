@@ -49,7 +49,7 @@ import Testing
         "run `core sea` now",
         "```\ncore sea\na b 1234\n```",
         "```\nunclosed core sea",
-        "file:///Users/patrick/core sea",
+        "file:///Users/sam/core sea",
     ])
     func neverInsideURLsOrCode(input: String) {
         let result = Self.sample.fix(input)
@@ -69,7 +69,7 @@ import Testing
         ("Siobhan Murphy agreed", "Siobhán Murphy agreed"),
         ("siobhan murphy agreed", "Siobhán Murphy agreed"),
         ("Siobhán Murphy agreed", "Siobhán Murphy agreed"),
-        ("Patrick Collins wrote it", "Patrick Collings wrote it"),
+        ("Declan Hollins wrote it", "Declan Hollings wrote it"),
     ])
     func people(input: String, expected: String) {
         #expect(fix(input) == expected)

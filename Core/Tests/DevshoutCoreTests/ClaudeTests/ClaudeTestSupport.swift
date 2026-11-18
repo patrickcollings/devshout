@@ -74,16 +74,16 @@ enum ClaudeTestSupport {
         return link
     }
 
-    static let credential = ClaudeCredential(token: "sk-ant-oat01-test-token",
+    static let credential = ClaudeCredential(token: "fake-token-for-tests",
                                              createdAt: Date(timeIntervalSince1970: 1_790_000_000))
 
-    static let host = ClaudeHostEnvironment(home: "/Users/patrick", user: "patrick", lang: "en_GB.UTF-8",
+    static let host = ClaudeHostEnvironment(home: "/Users/sam", user: "sam", lang: "en_GB.UTF-8",
                                             tmpDir: "/var/folders/xy/T/")
 }
 
 /// A file system made of a set of executable paths and directory listings.
 struct FakeFileSystem: FileSystem {
-    var homeDirectory: URL = URL(fileURLWithPath: "/Users/patrick")
+    var homeDirectory: URL = URL(fileURLWithPath: "/Users/sam")
     var executables: Set<String> = []
     var directories: [String: [String]] = [:]
     /// Executables that are scripts (`#!…`); the others read as a native binary.

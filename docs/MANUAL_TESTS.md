@@ -1,6 +1,6 @@
 # Manual tests: v0.1
 
-The checklist for Patrick's Mac (MacBook Pro M1 Pro, macOS 14+), adapted from PLAN §10.4 to what v0.1 does.
+The checklist for a developer's Mac (Apple silicon, macOS 14+), adapted from PLAN §10.4 to what v0.1 does.
 CI can't test any of this: there is no microphone, Neural Engine, Accessibility or Claude subscription on the runners.
 
 Tick what works, and note anything odd next to the item (timings especially). Getting the app is in the README's

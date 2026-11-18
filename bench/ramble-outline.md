@@ -1,7 +1,7 @@
 # Ramble outline
 
 One natural, unscripted ramble of about five minutes: you are talking a coding agent through a piece of work in
-the Abatable app. Do not read it. Look at one point at a time, say it in your own words (ums and tangents are
+the app. Do not read it. Look at one point at a time, say it in your own words (ums and tangents are
 welcome, they are the point of the test), then move on. About 30–40 seconds per point gets you to five minutes.
 
 Record it as `audio/ramble.wav`. Afterwards write what you *meant* as `references/ramble.txt` (your hand-corrected

@@ -1,7 +1,7 @@
 {
   "applyGlossaryFixes" : true,
   "audioRetentionDays" : 30,
-  "claudePathOverride" : "/Users/patrick/.local/bin/claude",
+  "claudePathOverride" : "/Users/sam/.local/bin/claude",
   "defaultMode" : "tidy",
   "engine" : "parakeet-tdt-0.6b-v3",
   "hotkeyBehaviour" : "tapToggleHoldToTalk",

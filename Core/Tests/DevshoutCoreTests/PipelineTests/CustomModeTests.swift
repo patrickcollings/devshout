@@ -29,7 +29,7 @@ import Testing
     }
 
     @Test func hotkeyNames() throws {
-        // The built-ins' names are the UserDefaults keys Patrick's hotkeys are already stored under.
+        // The built-ins' names are the UserDefaults keys the built-in hotkeys are already stored under.
         #expect(ModeID.raw.hotkeyName == "dictateRaw")
         #expect(ModeID.tidy.hotkeyName == "dictateTidy")
         #expect(ModeID.structure.hotkeyName == "dictateStructure")
@@ -70,7 +70,7 @@ import Testing
         #expect(s.perAppModes == ["com.apple.Terminal": .structure, "com.apple.mail": .raw,
                                   "com.tinyspeck.slackmacgap": .tidy])
         #expect(!s.soundsEnabled)
-        #expect(s.claudePathOverride == "/Users/patrick/.local/bin/claude")
+        #expect(s.claudePathOverride == "/Users/sam/.local/bin/claude")
         #expect(s.modeDescriptors == ModeDescriptor.builtIns)
 
         // Saved again and reloaded, it is the same settings, and the built-ins keep their keys.

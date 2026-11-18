@@ -2,7 +2,7 @@
 
 **Talk. devshout writes it down, tidies it up, and pastes it.**
 
-devshout is a native macOS menu bar dictation app for the Abatable team. Press a hotkey and talk, even for a five-minute ramble of instructions to a coding agent. An accurate, cleaned-up transcript is then pasted into whatever app has focus, and left on the clipboard too.
+devshout is a native macOS menu bar dictation app for developers. Press a hotkey and talk, even for a five-minute ramble of instructions to a coding agent. An accurate, cleaned-up transcript is then pasted into whatever app has focus, and left on the clipboard too.
 
 - **Local, free transcription.** Parakeet TDT 0.6B v3 (FluidAudio, Neural Engine) or Whisper large-v3-turbo (WhisperKit). Audio never leaves your Mac.
 - **Clean-up with your own Claude plan.** It runs through the Claude Code CLI (`claude -p`), and only text is sent.
@@ -12,7 +12,7 @@ devshout is a native macOS menu bar dictation app for the Abatable team. Press a
 
 ## Status
 
-**v0.1, for testing on Patrick's Mac.** Menu bar app, onboarding, hotkeys (tap to toggle, hold to talk, Esc to
+**v0.1, for local testing.** Menu bar app, onboarding, hotkeys (tap to toggle, hold to talk, Esc to
 cancel), local transcription after you stop, Tidy and Structure through Claude with a raw fallback, paste, a
 recording pill, and Settings with a History tab. The plan is in
 [`docs/PLAN.md`](docs/PLAN.md) and the test checklist in [`docs/MANUAL_TESTS.md`](docs/MANUAL_TESTS.md).

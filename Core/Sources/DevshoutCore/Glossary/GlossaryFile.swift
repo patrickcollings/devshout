@@ -1,6 +1,6 @@
 import Foundation
 
-/// The one `glossary.md` Patrick edits in Settings → Glossary (PLAN §0 item 4).
+/// The one `glossary.md` the user edits in Settings → Glossary (PLAN §0 item 4).
 public struct GlossaryFile: Sendable, Hashable {
     public let url: URL
 

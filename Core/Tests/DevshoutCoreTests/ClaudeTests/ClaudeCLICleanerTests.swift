@@ -33,7 +33,7 @@ import Testing
             configDirectory: root.appendingPathComponent("config"),
             workingDirectory: root.appendingPathComponent("cwd"),
             runner: runner,
-            host: ClaudeHostEnvironment(home: root.path, user: "patrick", tmpDir: root.path),
+            host: ClaudeHostEnvironment(home: root.path, user: "sam", tmpDir: root.path),
             temporaryDirectory: root.appendingPathComponent("tmp"))
         return Setup(cleaner: cleaner, root: root, record: record, claude: claude, runner: runner)
     }
@@ -79,7 +79,7 @@ import Testing
             guard let eq = line.firstIndex(of: "=") else { return nil }
             return (String(line[..<eq]), String(line[line.index(after: eq)...]))
         }, uniquingKeysWith: { a, _ in a })
-        #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token")
+        #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == "fake-token-for-tests")
         #expect(env["CLAUDE_CONFIG_DIR"] == s.root.appendingPathComponent("config").path)
         #expect(env["HOME"] == s.root.path)
         #expect(env["ANTHROPIC_API_KEY"] == nil)

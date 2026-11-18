@@ -4,7 +4,7 @@ import Foundation
 public struct BenchSentence: Sendable, Hashable {
     /// "s01" … "s10".
     public var id: String
-    /// The text to read aloud. May contain `⟨teammate⟩` placeholders for Patrick to swap for real names.
+    /// The text to read aloud. May contain `⟨teammate⟩` placeholders to swap for real names.
     public var text: String
 
     public init(id: String, text: String) {
