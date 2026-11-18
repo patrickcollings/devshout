@@ -156,7 +156,7 @@ Deliberately left out: GRDB/SwiftData (history is a folder of JSON files, simple
 | Automation (Apple Events) | **Avoided.** We never script Terminal. Opening Terminal for a sign-in fallback uses a `.command` file and `NSWorkspace.open`, which needs no permission. | — | — |
 | Network | Model downloads, Claude CLI, update check | No prompt (not sandboxed) | — |
 
-Info.plist: `LSUIElement = YES` (menu bar only, no Dock icon; the app activates itself when a window opens), `LSMinimumSystemVersion = 14.0`, bundle ID `com.patrickcollings.devshout`, and `NSMicrophoneUsageDescription = "devshout records your voice only while you hold or toggle the dictation hotkey. Audio stays on this Mac."`
+Info.plist: `LSUIElement = YES` (menu bar only, no Dock icon; the app activates itself when a window opens), `LSMinimumSystemVersion = 14.0`, bundle ID `app.devshout.mac`, and `NSMicrophoneUsageDescription = "devshout records your voice only while you hold or toggle the dictation hotkey. Audio stays on this Mac."`
 
 ### 2.5 The engine interface
 
@@ -272,7 +272,7 @@ Handy's #502 ("pastes the old clipboard") is a race: Handy restores the previous
 ├── Glossary/{team/ (git clone or download), glossary.local.md}
 ├── claude/            # CLAUDE_CONFIG_DIR for devshout's own Claude Code sign-in (§5.4)
 ├── claude-cwd/        # empty working directory for `claude -p`
-└── Logs/              # plus os.Logger (subsystem com.patrickcollings.devshout)
+└── Logs/              # plus os.Logger (subsystem app.devshout.mac)
 ```
 
 Retention settings: audio is kept 30 days by default, text forever, and both can be changed. There is a "Delete all history" button.

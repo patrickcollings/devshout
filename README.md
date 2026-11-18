@@ -17,24 +17,36 @@ cancel), local transcription after you stop, Tidy and Structure through Claude w
 recording pill, and Settings with a History tab. The plan is in
 [`docs/PLAN.md`](docs/PLAN.md) and the test checklist in [`docs/MANUAL_TESTS.md`](docs/MANUAL_TESTS.md).
 
-## First run
+## Install
 
-**Get the app**, either way:
+You need an Apple silicon Mac on macOS 14 or later. Xcode is not needed.
 
-- **From CI:** open the latest run of the *macOS build* workflow (Actions tab), download the `devshout-<sha>`
-  artefact, unzip it, then unzip `devshout-app.zip` inside and move `devshout.app` to /Applications. The first time
-  you open it macOS blocks it: go to **System Settings → Privacy & Security**, scroll to "devshout was blocked…" and
-  click **Open Anyway**. Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/devshout.app`
-- **Build it yourself:** `brew install xcodegen`, then `open "$(scripts/build-app.sh)"`. Needs Xcode 26.
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickcollings/devshout/main/install.sh | bash
+```
 
-Onboarding then walks you through the microphone, Accessibility, the speech model download, Claude and the hotkeys.
-Press **⌥Space** to dictate.
+That downloads the latest release into `/Applications` and opens it. Run it again to update.
 
-**Permissions after a new build:** `scripts/build-app.sh` signs the app with a self-signed `devshout-dev`
-certificate when your login keychain has one, so macOS keeps the Microphone and Accessibility grants across builds
-(`CLAUDE.md` says how to make the certificate). Without it, or with a CI build, the app is ad-hoc signed and macOS
-sees each new build as a different app: open **System Settings → Privacy & Security → Accessibility**, select
-devshout, remove it with **−**, then add it again with **+**.
+**Or ask Claude Code to do it:** point it at this repo and say "install devshout". The steps for an agent are in
+[`INSTALL.md`](INSTALL.md).
+
+**What you still do by hand, once.** The set-up window walks you through it:
+
+1. Allow the **Microphone** (a macOS prompt).
+2. Allow **Accessibility** in System Settings, so devshout can paste for you. macOS does not let a script or an
+   agent grant these two.
+3. Wait for the speech model to download.
+4. Connect your Claude plan (for Tidy and Structure; Raw works without it).
+
+Then press **⌥Space** to dictate.
+
+**After an update** macOS may stop pasting until you re-add devshout under **System Settings → Privacy &
+Security → Accessibility** (remove it with **−**, add it again with **+**), and may ask once for your login
+password to read the Claude token ("Always Allow").
+
+**Build it yourself instead:** clone the repo, `brew install xcodegen`, then `scripts/install-from-source.sh`.
+Needs Xcode 26. `scripts/build-app.sh` signs with a self-signed `devshout-dev` certificate when your login keychain
+has one, which keeps the permissions across rebuilds (`CLAUDE.md` says how to make it).
 
 ## Requirements
 

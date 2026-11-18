@@ -1,5 +1,5 @@
 // KeychainCredentialStore: keeps the Claude token (a JSON-encoded ClaudeCredential) as one generic-password item in
-// the login Keychain of this Mac: service "com.patrickcollings.devshout.claude-token", account "default",
+// the login Keychain of this Mac: service "app.devshout.mac.claude-token", account "default",
 // accessible after first unlock, this device only (never synced to iCloud Keychain).
 //
 // Unsure / unverified on macOS:
@@ -14,7 +14,7 @@ import Foundation
 import Security
 
 public struct KeychainCredentialStore: CredentialStore {
-    public static let defaultService = "com.patrickcollings.devshout.claude-token"
+    public static let defaultService = "app.devshout.mac.claude-token"
     public static let defaultAccount = "default"
 
     public let service: String

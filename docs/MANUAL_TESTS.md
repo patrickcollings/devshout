@@ -18,7 +18,7 @@ DMG/updates.
 Useful places:
 - App data: `~/Library/Application Support/devshout/` (`settings.json`, `glossary.md`, `Recordings/YYYY/MM/<id>/`
   with `audio.wav` and `record.json`, `Models/`, `claude/`, `claude-cwd/`).
-- Logs: Console.app, filter on `devshout` (subsystem `com.patrickcollings.devshout`).
+- Logs: Console.app, filter on `devshout` (subsystem `app.devshout.mac`).
 
 ## Install and first launch
 

@@ -4,7 +4,7 @@
 // Unsure on macOS (written on Linux, type-checked there against stand-ins for DevshoutMac, never run on a Mac):
 // - `SileroVAD()` relies on its default `config:` argument (FluidAudio's `VadConfig.default`) without this target
 //   importing FluidAudio.
-// - Reading the app's remembered auth failure from `UserDefaults(suiteName: "com.patrickcollings.devshout")`: works
+// - Reading the app's remembered auth failure from `UserDefaults(suiteName: "app.devshout.mac")`: works
 //   for a non-sandboxed app's domain as far as the docs say; best effort only.
 import ArgumentParser
 import DevshoutCore
@@ -121,7 +121,7 @@ enum Credentials {
 
     /// The app remembers a clean-up that failed on authentication (`ClaudeConnection`, key "claude.authFailure").
     static func appAuthFailure(for credential: ClaudeCredential?) -> String? {
-        guard let defaults = UserDefaults(suiteName: "com.patrickcollings.devshout"),
+        guard let defaults = UserDefaults(suiteName: "app.devshout.mac"),
               let data = defaults.data(forKey: "claude.authFailure"),
               let failure = try? JSONDecoder().decode(ClaudeAuthFailure.self, from: data) else { return nil }
         return failure.message(for: credential)
