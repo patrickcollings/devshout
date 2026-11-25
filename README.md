@@ -56,3 +56,7 @@ has one, which keeps the permissions across rebuilds (`CLAUDE.md` says how to ma
 ## Credits
 
 [cjpais/Handy](https://github.com/cjpais/Handy) (MIT) is a design reference. devshout is written from scratch.
+
+## Licence
+
+MIT. See [`LICENSE`](LICENSE).
